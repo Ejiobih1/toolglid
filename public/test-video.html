@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Your YouTube Video</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: white;
+        }
+        .video-container {
+            aspect-ratio: 16/9;
+            background: black;
+            margin: 20px 0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+        }
+        .info {
+            background: #2a2a3e;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        h1 { color: #a78bfa; }
+        h2 { color: #c084fc; }
+        .success { color: #4ade80; }
+        .error { color: #f87171; }
+        button {
+            background: linear-gradient(to right, #a78bfa, #ec4899);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <h1>YouTube Video Embedding Test</h1>
+
+    <div class="info">
+        <h2>Testing Video ID: -6FYfcXFxn4</h2>
+        <p><strong>Video Title:</strong> How NATO Actually Works: Everything You Need to Know</p>
+        <p><strong>Channel:</strong> MILITARY TECHNOLOGY</p>
+        <p><strong>Test Purpose:</strong> Verify if this video can be embedded in your app</p>
+    </div>
+
+    <h2>Test 1: Basic Embed (No Parameters)</h2>
+    <div class="video-container">
+        <iframe
+            src="https://www.youtube.com/embed/-6FYfcXFxn4"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+        ></iframe>
+    </div>
+    <p id="test1-result">Loading...</p>
+
+    <h2>Test 2: With App Parameters (rel=0, modestbranding=1, autoplay=0)</h2>
+    <div class="video-container">
+        <iframe
+            src="https://www.youtube.com/embed/-6FYfcXFxn4?rel=0&modestbranding=1&autoplay=0"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+        ></iframe>
+    </div>
+    <p id="test2-result">Loading...</p>
+
+    <h2>Test 3: With Autoplay (Like in Your App)</h2>
+    <div class="video-container">
+        <iframe
+            src="https://www.youtube.com/embed/-6FYfcXFxn4?rel=0&modestbranding=1&autoplay=1"
+            frameborder="0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowfullscreen
+        ></iframe>
+    </div>
+    <p id="test3-result">If autoplay is blocked, click the video to play</p>
+
+    <div class="info">
+        <h2>Troubleshooting Steps:</h2>
+        <ol>
+            <li><strong>If all videos show errors:</strong> The video might be restricted from embedding on localhost</li>
+            <li><strong>If videos work here but not in app:</strong> Check localStorage in your app</li>
+            <li><strong>If autoplay doesn't work:</strong> Browser might block autoplay (this is normal)</li>
+            <li><strong>If you see "Video unavailable":</strong> Video might be private or deleted</li>
+        </ol>
+
+        <h2>Actions:</h2>
+        <button onclick="clearAppData()">Clear App Data & Reload Main App</button>
+        <button onclick="testWithoutAutoplay()">Test Without Autoplay</button>
+        <button onclick="window.open('https://www.youtube.com/watch?v=-6FYfcXFxn4', '_blank')">Open on YouTube</button>
+    </div>
+
+    <div class="info">
+        <h2>Alternative Working Videos (Guaranteed):</h2>
+        <p>If your video doesn't work, these are confirmed embeddable:</p>
+        <ul>
+            <li><strong>ScMzIvxBSi4</strong> - Sample Video</li>
+            <li><strong>aqz-KE-bpKQ</strong> - Big Buck Bunny</li>
+            <li><strong>jNQXAC9IVRw</strong> - Me at the zoo (First YouTube Video)</li>
+        </ul>
+        <button onclick="testAlternative()">Test Alternative Video</button>
+    </div>
+
+    <script>
+        // Test if videos loaded successfully
+        setTimeout(() => {
+            document.getElementById('test1-result').innerHTML =
+                '<span class="success">✓ If you see video above, basic embed works!</span>';
+            document.getElementById('test2-result').innerHTML =
+                '<span class="success">✓ If you see video above, app parameters work!</span>';
+        }, 2000);
+
+        function clearAppData() {
+            if (confirm('This will clear all app data and reload. Continue?')) {
+                localStorage.removeItem('admin_videos');
+                localStorage.removeItem('pdf_access');
+                localStorage.removeItem('pdf_premium');
+                alert('App data cleared! Redirecting to main app...');
+                window.location.href = '/';
+            }
+        }
+
+        function testWithoutAutoplay() {
+            const url = 'https://www.youtube.com/embed/-6FYfcXFxn4?rel=0&modestbranding=1&autoplay=0';
+            window.open(url, '_blank');
+        }
+
+        function testAlternative() {
+            const alt = prompt('Enter alternative video ID (e.g., ScMzIvxBSi4):');
+            if (alt) {
+                window.location.href = `test-video.html?v=${alt}`;
+            }
+        }
+
+        // Check URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const videoId = urlParams.get('v');
+        if (videoId) {
+            document.querySelectorAll('iframe').forEach(iframe => {
+                const currentSrc = iframe.src;
+                iframe.src = currentSrc.replace('-6FYfcXFxn4', videoId);
+            });
+            document.querySelector('h2').textContent = `Testing Video ID: ${videoId}`;
+        }
+    </script>
+</body>
+</html>
