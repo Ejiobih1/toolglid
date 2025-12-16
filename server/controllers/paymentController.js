@@ -1,10 +1,26 @@
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+// Initialize Stripe only if API key is provided
+let stripe = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+  console.log('✅ Stripe initialized successfully');
+} else {
+  console.log('⚠️  Stripe not configured - payment features disabled');
+}
+
 const { query } = require('../database/db');
 
 /**
  * Create Stripe Checkout Session for Premium Subscription
  */
 const createCheckoutSession = async (req, res) => {
+  // Check if Stripe is configured
+  if (!stripe) {
+    return res.status(503).json({
+      error: 'Payment system not configured',
+      message: 'Premium subscriptions are coming soon! Payment processing is not yet available.'
+    });
+  }
+
   try {
     const userId = req.user.userId;
     const { email } = req.user;
@@ -85,6 +101,13 @@ const createCheckoutSession = async (req, res) => {
  * Handle Stripe Webhook Events
  */
 const handleWebhook = async (req, res) => {
+  // Check if Stripe is configured
+  if (!stripe) {
+    return res.status(503).json({
+      error: 'Payment system not configured'
+    });
+  }
+
   const sig = req.headers['stripe-signature'];
 
   let event;
@@ -261,6 +284,13 @@ const handlePaymentFailed = async (invoice) => {
  * Cancel subscription
  */
 const cancelSubscription = async (req, res) => {
+  // Check if Stripe is configured
+  if (!stripe) {
+    return res.status(503).json({
+      error: 'Payment system not configured'
+    });
+  }
+
   try {
     const userId = req.user.userId;
 
