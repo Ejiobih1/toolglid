@@ -1,3 +1,9 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
-Disallow:
+Allow: /
+
+# Disallow admin or private areas (if any)
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://toolglid.com/sitemap.xml
