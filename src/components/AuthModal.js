@@ -189,36 +189,68 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
         }, 1000);
 
       } else if (mode === 'register') {
+        // First check if user already exists
+        const { data: existingUsers } = await supabase
+          .from('users')
+          .select('email')
+          .eq('email', email)
+          .limit(1);
+
+        if (existingUsers && existingUsers.length > 0) {
+          throw new Error('This email is already registered. Please login instead.');
+        }
+
         // Sign up with Supabase
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/`,
+            data: {
+              email: email
+            }
           }
         });
 
+        console.log('Signup response:', { data, error });
+
         if (error) {
           // Handle specific signup errors
-          if (error.message.includes('User already registered')) {
+          if (error.message.includes('already registered') || error.message.includes('already been registered')) {
             throw new Error('This email is already registered. Please login or use a different email.');
-          } else if (error.message.includes('Email rate limit exceeded')) {
+          } else if (error.message.includes('Email rate limit exceeded') || error.message.includes('rate limit')) {
             throw new Error('Too many signup attempts. Please try again in a few minutes.');
+          } else if (error.message.includes('unable to validate email')) {
+            throw new Error('Invalid email address. Please check and try again.');
           }
           throw error;
         }
 
-        // Check if email confirmation is required
-        if (data.session) {
-          // Email confirmation disabled - user is logged in immediately
-          setSuccess('Account created successfully!');
-          setTimeout(() => {
-            onSuccess(data.user);
-          }, 1000);
-        } else if (data.user && !data.session) {
-          // Email confirmation enabled - switch to verification mode
-          setMode('verify');
-          setSuccess('✅ Account created! Please check your email and click the confirmation link to verify your account.');
+        // Supabase returns user even if email already exists (when email confirmation is on)
+        // Check if this is a duplicate by checking if user was created or already existed
+        if (data.user) {
+          // Check if user identity already exists (indicates duplicate)
+          if (data.user.identities && data.user.identities.length === 0) {
+            throw new Error('This email is already registered. Please login instead.');
+          }
+
+          // Check if email confirmation is required
+          if (data.session) {
+            // Email confirmation disabled - user is logged in immediately
+            setSuccess('Account created successfully!');
+            setTimeout(() => {
+              onSuccess(data.user);
+            }, 1000);
+          } else {
+            // Email confirmation enabled - switch to verification mode
+            setMode('verify');
+            setSuccess('✅ Account created! Please check your email (including spam folder) and click the confirmation link to verify your account.');
+
+            // Log for debugging
+            console.log('Verification email should be sent to:', email);
+          }
+        } else {
+          throw new Error('Signup failed. Please try again.');
         }
 
       }
