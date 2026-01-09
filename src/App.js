@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Moon, Sun, Lock, Clock, Play, FileText, Scissors, Minimize2, Image, FileImage, Type, Shield, RotateCw, Crown, X, Upload, Download, AlertCircle, CheckCircle, Loader, Hash, Trash2, FileDown, FileEdit, PenTool, Crop, Maximize2, Layers, AlignCenter, ArrowUpDown, LogOut, LogIn, User as UserIcon } from 'lucide-react';
+import { Moon, Sun, Lock, Clock, Play, FileText, Scissors, Minimize2, Image, FileImage, Type, Shield, RotateCw, Crown, X, Upload, Download, AlertCircle, CheckCircle, Loader, Hash, Trash2, FileDown, FileEdit, PenTool, Crop, Maximize2, Layers, AlignCenter, ArrowUpDown, LogOut, LogIn, User as UserIcon, Menu } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { supabase } from './lib/supabase';
 import {
@@ -65,6 +65,7 @@ export default function PDFToolsApp() {
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [selectedTool, setSelectedTool] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Authentication State (using Supabase Auth)
   const { user, logout, refreshUser, isPremium: isPremiumFromContext } = useAuth();
@@ -1020,21 +1021,24 @@ export default function PDFToolsApp() {
       <header className={`sticky top-0 z-40 backdrop-blur-md border-b ${
         darkMode ? 'bg-[#2A2A3E]/90 border-purple-500/20' : 'bg-white/90 border-purple-200'
       }`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <FileText className="w-8 h-8 text-purple-500" />
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
-                PDF Tools Pro
+            {/* Logo */}
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500" />
+              <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent">
+                ToolGlid
               </h1>
             </div>
-            <div className="flex items-center space-x-4">
+
+            {/* Desktop Navigation - Hidden on mobile */}
+            <div className="hidden lg:flex items-center space-x-3">
               {user && (
                 <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg ${
                   darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-100 text-purple-700'
                 }`}>
                   <UserIcon className="w-4 h-4" />
-                  <span className="text-sm font-semibold">{user.email}</span>
+                  <span className="text-sm font-semibold truncate max-w-[120px]">{user.email}</span>
                 </div>
               )}
               {isPremium && (
@@ -1090,8 +1094,109 @@ export default function PDFToolsApp() {
                 {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
               </button>
             </div>
+
+            {/* Mobile Menu Button & Dark Mode Toggle - Visible on mobile */}
+            <div className="flex lg:hidden items-center space-x-2">
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className={`p-2 rounded-lg transition-colors ${
+                  darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
+                }`}
+              >
+                {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+              </button>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className={`p-2 rounded-lg transition-colors ${
+                  darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
+                }`}
+                aria-label="Toggle menu"
+              >
+                {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Mobile Menu Drawer */}
+        {mobileMenuOpen && (
+          <div className={`lg:hidden border-t ${
+            darkMode ? 'border-purple-500/20 bg-[#2A2A3E]' : 'border-purple-200 bg-white'
+          }`}>
+            <div className="px-4 py-4 space-y-3">
+              {/* User Info */}
+              {user && (
+                <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg ${
+                  darkMode ? 'bg-purple-900/30 text-purple-300' : 'bg-purple-100 text-purple-700'
+                }`}>
+                  <UserIcon className="w-4 h-4" />
+                  <span className="text-sm font-semibold truncate">{user.email}</span>
+                </div>
+              )}
+
+              {/* Premium Badge */}
+              {isPremium && (
+                <div className="flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-lg">
+                  <Crown className="w-4 h-4 text-white" />
+                  <span className="text-white text-sm font-semibold">Premium Member</span>
+                </div>
+              )}
+
+              {/* Time Remaining */}
+              {isUnlocked && !isPremium && (
+                <div className={`flex items-center space-x-2 px-3 py-2 rounded-lg ${
+                  darkMode ? 'bg-green-900/30 text-green-400' : 'bg-green-100 text-green-700'
+                }`}>
+                  <Clock className="w-4 h-4" />
+                  <span className="text-sm font-semibold">Time Remaining: {formatTime(timeRemaining)}</span>
+                </div>
+              )}
+
+              {/* Unlock Button */}
+              {!isUnlocked && !isPremium && (
+                <button
+                  onClick={() => {
+                    setShowVideoModal(true);
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full flex items-center justify-center space-x-2 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+                >
+                  <Lock className="w-5 h-5" />
+                  <span>Unlock Tools</span>
+                </button>
+              )}
+
+              {/* Auth Buttons */}
+              {user ? (
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-lg transition-colors ${
+                    darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span className="font-semibold">Logout</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setShowAuthModal(true);
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-center space-x-2 px-4 py-3 rounded-lg transition-colors ${
+                    darkMode ? 'bg-purple-700 hover:bg-purple-600' : 'bg-purple-200 hover:bg-purple-300'
+                  }`}
+                >
+                  <LogIn className="w-5 h-5" />
+                  <span className="font-semibold">Login</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
@@ -1110,26 +1215,26 @@ export default function PDFToolsApp() {
 
         {/* Access Status Banner */}
         {!isUnlocked && !isPremium && (
-          <div className={`mb-8 p-6 rounded-2xl border-2 ${
+          <div className={`mb-8 p-4 sm:p-6 rounded-2xl border-2 ${
             darkMode
               ? 'bg-purple-900/20 border-purple-500/30'
               : 'bg-purple-50 border-purple-200'
           }`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <Lock className="w-8 h-8 text-purple-500" />
-                <div>
-                  <h3 className={`font-bold text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="flex items-center space-x-3 sm:space-x-4 w-full sm:w-auto">
+                <Lock className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500 flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className={`font-bold text-base sm:text-lg ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Tools Locked
                   </h3>
-                  <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Watch a short video to unlock access, or upgrade to Premium
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowVideoModal(true)}
-                className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
+                className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-semibold hover:shadow-lg transition-all whitespace-nowrap"
               >
                 Unlock Now
               </button>
@@ -1165,24 +1270,26 @@ export default function PDFToolsApp() {
 
         {/* Premium CTA */}
         {!isPremium && (
-          <div className={`mt-12 p-8 rounded-2xl border-2 ${
+          <div className={`mt-8 sm:mt-12 p-4 sm:p-6 lg:p-8 rounded-2xl border-2 ${
             darkMode
               ? 'bg-gradient-to-r from-purple-900/20 to-pink-900/20 border-purple-500/30'
               : 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-300'
           }`}>
-            <div className="flex flex-col sm:flex-row items-center justify-between space-y-4 sm:space-y-0">
-              <div className="flex items-center space-x-4">
-                <Crown className="w-12 h-12 text-yellow-500" />
-                <div>
-                  <h3 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 sm:gap-6">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-3 sm:gap-4 w-full sm:w-auto">
+                <Crown className="w-10 h-10 sm:w-12 sm:h-12 text-yellow-500 flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className={`text-xl sm:text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Upgrade to Premium
                   </h3>
-                  <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <p className={`text-sm sm:text-base mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Unlimited access. No videos required. Priority processing.
                   </p>
                 </div>
               </div>
-              <PremiumCheckout darkMode={darkMode} />
+              <div className="w-full sm:w-auto flex justify-center">
+                <PremiumCheckout darkMode={darkMode} />
+              </div>
             </div>
           </div>
         )}
@@ -1220,75 +1327,77 @@ export default function PDFToolsApp() {
 
       {/* Video Modal */}
       {showVideoModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className={`max-w-4xl w-full rounded-2xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto ${
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className={`max-w-4xl w-full rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto ${
             darkMode ? 'bg-[#2A2A3E]' : 'bg-white'
           }`}>
-            <div className="flex items-center justify-between mb-6">
-              <h3 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            <div className="flex items-center justify-between mb-4 sm:mb-6">
+              <h3 className={`text-lg sm:text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                 Watch to Unlock Access
               </h3>
               <button
                 onClick={closeVideoModal}
-                className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
+                className={`p-2 rounded-lg flex-shrink-0 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 
             {!selectedVideo ? (
               /* Video Selection Screen */
               <div className="space-y-4">
-                <p className={`text-center mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                <p className={`text-center text-sm sm:text-base mb-4 sm:mb-6 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                   Choose a video to watch. Longer videos grant more access time!
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   {videos.map((video) => (
                     <button
                       key={video.id}
                       onClick={() => handleVideoSelect(video)}
-                      className={`p-4 rounded-xl text-left transition-all ${
+                      className={`p-3 sm:p-4 rounded-lg sm:rounded-xl text-left transition-all ${
                         darkMode
                           ? 'bg-[#1E1E2E] hover:bg-purple-900/30 border border-purple-500/30'
                           : 'bg-purple-50 hover:bg-purple-100 border border-purple-200'
                       }`}
                     >
                       <div className="flex items-center space-x-3 mb-2">
-                        <Play className="w-8 h-8 text-purple-500" />
-                        <div className="flex-1">
-                          <h4 className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        <Play className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <h4 className={`font-semibold text-sm sm:text-base truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                             {video.title}
                           </h4>
-                          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                             {video.duration} min video
                           </p>
                         </div>
                       </div>
-                      <div className={`flex items-center space-x-2 text-sm font-semibold ${
+                      <div className={`flex items-center space-x-2 text-xs sm:text-sm font-semibold ${
                         darkMode ? 'text-purple-400' : 'text-purple-600'
                       }`}>
-                        <Clock className="w-4 h-4" />
+                        <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
                         <span>Get {video.accessHours}h access</span>
                       </div>
                     </button>
                   ))}
                 </div>
-                <div className={`mt-8 p-4 rounded-xl border-2 ${
+                <div className={`mt-6 sm:mt-8 p-3 sm:p-4 rounded-lg sm:rounded-xl border-2 ${
                   darkMode ? 'bg-gradient-to-r from-purple-900/20 to-pink-900/20 border-purple-500/30' : 'bg-gradient-to-r from-purple-50 to-pink-50 border-purple-300'
                 }`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Crown className="w-8 h-8 text-yellow-500" />
-                      <div>
-                        <h4 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  <div className="flex flex-col sm:flex-row items-center sm:justify-between gap-3 sm:gap-4">
+                    <div className="flex items-center gap-3 text-center sm:text-left w-full sm:w-auto">
+                      <Crown className="w-8 h-8 sm:w-10 sm:h-10 text-yellow-500 flex-shrink-0" />
+                      <div className="flex-1">
+                        <h4 className={`font-bold text-sm sm:text-base ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                           Premium Plan
                         </h4>
-                        <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                        <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                           Unlimited access, no video watching required
                         </p>
                       </div>
                     </div>
-                    <PremiumCheckout darkMode={darkMode} />
+                    <div className="w-full sm:w-auto flex justify-center">
+                      <PremiumCheckout darkMode={darkMode} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1378,27 +1487,27 @@ export default function PDFToolsApp() {
 
       {/* Tool Modal */}
       {selectedTool && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className={`max-w-2xl w-full rounded-2xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto ${
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 sm:p-4">
+          <div className={`max-w-2xl w-full rounded-xl sm:rounded-2xl p-4 sm:p-6 lg:p-8 max-h-[95vh] sm:max-h-[90vh] overflow-y-auto ${
             darkMode ? 'bg-[#2A2A3E]' : 'bg-white'
           }`}>
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                {React.createElement(selectedTool.icon, { className: "w-8 h-8 text-purple-500" })}
-                <div>
-                  <h3 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            <div className="flex items-start justify-between mb-4 sm:mb-6 gap-2">
+              <div className="flex items-start space-x-2 sm:space-x-3 flex-1 min-w-0">
+                {React.createElement(selectedTool.icon, { className: "w-6 h-6 sm:w-8 sm:h-8 text-purple-500 flex-shrink-0 mt-1" })}
+                <div className="flex-1 min-w-0">
+                  <h3 className={`text-lg sm:text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     {selectedTool.name}
                   </h3>
-                  <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <p className={`text-xs sm:text-sm mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     {selectedTool.desc}
                   </p>
                 </div>
               </div>
               <button
                 onClick={closeToolModal}
-                className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
+                className={`p-2 rounded-lg flex-shrink-0 ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5 sm:w-6 sm:h-6" />
               </button>
             </div>
 
@@ -1407,17 +1516,17 @@ export default function PDFToolsApp() {
                 <div
                   onDrop={handleDrop}
                   onDragOver={handleDragOver}
-                  className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${
+                  className={`border-2 border-dashed rounded-lg sm:rounded-xl p-6 sm:p-8 lg:p-12 text-center transition-all ${
                     darkMode
                       ? 'border-purple-500/30 hover:border-purple-500 bg-[#1E1E2E]'
                       : 'border-purple-300 hover:border-purple-500 bg-purple-50'
                   }`}
                 >
-                  <Upload className={`w-16 h-16 mx-auto mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                  <p className={`text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  <Upload className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-3 sm:mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+                  <p className={`text-base sm:text-lg font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Drop files here or use the button below
                   </p>
-                  <p className={`text-sm mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <p className={`text-xs sm:text-sm mb-3 sm:mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                     Supported: {selectedTool.accept}
                   </p>
 
@@ -1433,7 +1542,7 @@ export default function PDFToolsApp() {
                   <button
                     type="button"
                     onClick={handleSelectFilesClick}
-                    className={`inline-block px-6 py-3 rounded-lg font-semibold cursor-pointer transition-all ${
+                    className={`inline-block px-5 sm:px-6 py-2.5 sm:py-3 text-sm sm:text-base rounded-lg font-semibold cursor-pointer transition-all ${
                       darkMode ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-purple-500 hover:bg-purple-600 text-white'
                     }`}
                   >
@@ -1442,25 +1551,25 @@ export default function PDFToolsApp() {
                 </div>
 
                 {files.length > 0 && (
-                  <div className="mt-6">
-                    <h4 className={`font-semibold mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  <div className="mt-4 sm:mt-6">
+                    <h4 className={`font-semibold text-sm sm:text-base mb-2 sm:mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                       Selected Files ({files.length})
                     </h4>
                     <div className="space-y-2 max-h-40 overflow-y-auto">
                       {files.map((file, i) => (
                         <div
                           key={i}
-                          className={`flex items-center justify-between p-3 rounded-lg ${
+                          className={`flex items-center justify-between p-2 sm:p-3 rounded-lg ${
                             darkMode ? 'bg-[#1E1E2E]' : 'bg-gray-100'
                           }`}
                         >
-                          <div className="flex items-center space-x-3">
-                            <FileText className="w-5 h-5 text-purple-500" />
-                            <span className={`text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500 flex-shrink-0" />
+                            <span className={`text-xs sm:text-sm truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                               {file.name}
                             </span>
                           </div>
-                          <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <span className={`text-xs ml-2 flex-shrink-0 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                             {(file.size / 1024 / 1024).toFixed(2)} MB
                           </span>
                         </div>
@@ -1470,16 +1579,16 @@ export default function PDFToolsApp() {
                 )}
 
                 {error && (
-                  <div className="mt-4 p-4 bg-red-100 border border-red-300 rounded-lg flex items-center space-x-2">
-                    <AlertCircle className="w-5 h-5 text-red-600" />
-                    <span className="text-red-800 text-sm">{error}</span>
+                  <div className="mt-4 p-3 sm:p-4 bg-red-100 border border-red-300 rounded-lg flex items-start space-x-2">
+                    <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <span className="text-red-800 text-xs sm:text-sm flex-1">{error}</span>
                   </div>
                 )}
 
                 <button
                   onClick={processPDF}
                   disabled={processing || files.length === 0 || (selectedTool.id === 'merge' && files.length < 2)}
-                  className={`w-full mt-6 py-4 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all ${
+                  className={`w-full mt-4 sm:mt-6 py-3 sm:py-4 text-sm sm:text-base rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all ${
                     processing || files.length === 0 || (selectedTool.id === 'merge' && files.length < 2)
                       ? 'bg-gray-400 cursor-not-allowed'
                       : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:shadow-lg transform hover:scale-105'
@@ -1487,49 +1596,49 @@ export default function PDFToolsApp() {
                 >
                   {processing ? (
                     <>
-                      <Loader className="w-5 h-5 animate-spin" />
+                      <Loader className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
                       <span>Processing...</span>
                     </>
                   ) : (
                     <>
-                      {React.createElement(selectedTool.icon, { className: "w-5 h-5" })}
+                      {React.createElement(selectedTool.icon, { className: "w-4 h-4 sm:w-5 sm:h-5" })}
                       <span>Process {selectedTool.name}</span>
                     </>
                   )}
                 </button>
               </>
             ) : (
-              <div className="text-center py-8">
-                <CheckCircle className="w-20 h-20 text-green-500 mx-auto mb-4" />
-                <h4 className={`text-2xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              <div className="text-center py-4 sm:py-8">
+                <CheckCircle className="w-16 h-16 sm:w-20 sm:h-20 text-green-500 mx-auto mb-3 sm:mb-4" />
+                <h4 className={`text-xl sm:text-2xl font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                   Success!
                 </h4>
-                <p className={`mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                <p className={`text-sm sm:text-base mb-4 sm:mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                   {result.message}
                 </p>
 
                 {result.multiFile ? (
-                  <div className={`p-4 rounded-lg mb-6 max-h-60 overflow-y-auto ${darkMode ? 'bg-[#1E1E2E]' : 'bg-gray-100'}`}>
-                    <h5 className={`font-semibold mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  <div className={`p-3 sm:p-4 rounded-lg mb-4 sm:mb-6 max-h-60 overflow-y-auto ${darkMode ? 'bg-[#1E1E2E]' : 'bg-gray-100'}`}>
+                    <h5 className={`font-semibold text-sm sm:text-base mb-2 sm:mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                       Files ({result.files.length})
                     </h5>
                     <div className="space-y-2">
                       {result.files.map((file, index) => (
                         <div
                           key={index}
-                          className={`flex items-center justify-between p-3 rounded-lg ${
+                          className={`flex items-center justify-between p-2 sm:p-3 rounded-lg ${
                             darkMode ? 'bg-[#2A2A3E]' : 'bg-white'
                           }`}
                         >
-                          <div className="flex items-center space-x-3">
-                            <FileText className="w-5 h-5 text-purple-500" />
-                            <span className={`text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                          <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-purple-500 flex-shrink-0" />
+                            <span className={`text-xs sm:text-sm truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                               {file.name}
                             </span>
                           </div>
                           <button
                             onClick={() => downloadResult(file)}
-                            className="p-2 text-purple-500 hover:bg-purple-500/10 rounded transition-colors"
+                            className="p-1.5 sm:p-2 text-purple-500 hover:bg-purple-500/10 rounded transition-colors flex-shrink-0"
                           >
                             <Download className="w-4 h-4" />
                           </button>
@@ -1538,15 +1647,15 @@ export default function PDFToolsApp() {
                     </div>
                   </div>
                 ) : (
-                  <div className={`p-4 rounded-lg mb-6 ${darkMode ? 'bg-[#1E1E2E]' : 'bg-gray-100'}`}>
+                  <div className={`p-3 sm:p-4 rounded-lg mb-4 sm:mb-6 ${darkMode ? 'bg-[#1E1E2E]' : 'bg-gray-100'}`}>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <FileText className="w-8 h-8 text-purple-500" />
-                        <div className="text-left">
-                          <p className={`font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+                        <FileText className="w-6 h-6 sm:w-8 sm:h-8 text-purple-500 flex-shrink-0" />
+                        <div className="text-left flex-1 min-w-0">
+                          <p className={`font-semibold text-sm sm:text-base truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                             {result.filename}
                           </p>
-                          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                          <p className={`text-xs sm:text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                             {result.size}
                           </p>
                         </div>
@@ -1555,17 +1664,17 @@ export default function PDFToolsApp() {
                   </div>
                 )}
 
-                <div className="flex gap-4">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <button
                     onClick={result.multiFile ? downloadAllFiles : downloadResult}
-                    className="flex-1 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-semibold hover:shadow-lg transition-all flex items-center justify-center space-x-2"
+                    className="flex-1 py-3 text-sm sm:text-base bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-semibold hover:shadow-lg transition-all flex items-center justify-center space-x-2"
                   >
-                    <Download className="w-5 h-5" />
+                    <Download className="w-4 h-4 sm:w-5 sm:h-5" />
                     <span>{result.multiFile ? 'Download All' : 'Download'}</span>
                   </button>
                   <button
                     onClick={resetTool}
-                    className={`px-6 py-3 rounded-lg font-semibold ${
+                    className={`w-full sm:w-auto px-4 sm:px-6 py-3 text-sm sm:text-base rounded-lg font-semibold ${
                       darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-200 hover:bg-gray-300'
                     }`}
                   >
