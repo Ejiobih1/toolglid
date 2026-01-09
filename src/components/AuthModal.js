@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, Mail, Lock, User, AlertCircle, CheckCircle, Loader, Eye, EyeOff, Shield } from 'lucide-react';
+import { X, Mail, Lock, User, AlertCircle, CheckCircle, Loader, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 const AuthModal = ({ darkMode, onClose, onSuccess }) => {
-  const [mode, setMode] = useState('login'); // 'login', 'register', or 'verify'
+  const [mode, setMode] = useState('login'); // 'login' or 'register'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -151,7 +150,7 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
           email,
           password,
           options: {
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: `${window.location.origin}/`,
           }
         });
 
@@ -165,9 +164,8 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
             onSuccess(data.user);
           }, 1000);
         } else if (data.user && !data.session) {
-          // Email confirmation enabled - show verification screen
-          setMode('verify');
-          setSuccess('Verification code sent to your email! Please check your inbox.');
+          // Email confirmation enabled - show success message
+          setSuccess('✅ Account created! Please check your email and click the confirmation link to verify your account.');
         }
 
       }
@@ -178,67 +176,6 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
     }
   };
 
-  const handleVerification = async (e) => {
-    e.preventDefault();
-    setError('');
-    setSuccess('');
-
-    if (!verificationCode || verificationCode.length !== 6) {
-      setError('Please enter the 6-digit verification code');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // Verify OTP and log in automatically
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: verificationCode,
-        type: 'signup'
-      });
-
-      if (error) {
-        if (error.message.includes('invalid') || error.message.includes('expired')) {
-          throw new Error('Invalid or expired verification code. Please try again.');
-        }
-        throw error;
-      }
-
-      setSuccess('Email verified! Logging you in...');
-
-      // Auto-login after successful verification
-      setTimeout(() => {
-        onSuccess(data.user);
-      }, 1500);
-
-    } catch (error) {
-      setError(error.message || 'Verification failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resendVerificationCode = async () => {
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      setSuccess('New verification code sent! Check your email.');
-    } catch (error) {
-      setError('Failed to resend code. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const switchMode = () => {
     setMode(mode === 'login' ? 'register' : 'login');
@@ -246,7 +183,6 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
     setSuccess('');
     setPassword('');
     setConfirmPassword('');
-    setVerificationCode('');
   };
 
   const getPasswordStrengthColor = () => {
@@ -255,106 +191,6 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
     if (passwordStrength < 80) return 'bg-yellow-500';
     return 'bg-green-500';
   };
-
-  // Verification Mode
-  if (mode === 'verify') {
-    return (
-      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div className={`max-w-md w-full rounded-2xl p-8 ${
-          darkMode ? 'bg-[#2A2A3E]' : 'bg-white'
-        }`}>
-          <div className="flex items-center justify-between mb-6">
-            <h3 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-              Verify Your Email
-            </h3>
-            <button
-              onClick={onClose}
-              className={`p-2 rounded-lg ${darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-200'}`}
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
-
-          <p className={`mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            We've sent a 6-digit verification code to <strong>{email}</strong>
-          </p>
-
-          <form onSubmit={handleVerification} className="space-y-4">
-            <div>
-              <label className={`block text-sm font-semibold mb-2 ${
-                darkMode ? 'text-gray-300' : 'text-gray-700'
-              }`}>
-                Verification Code
-              </label>
-              <input
-                type="text"
-                value={verificationCode}
-                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="000000"
-                maxLength={6}
-                className={`w-full px-4 py-3 rounded-lg border text-center text-2xl tracking-widest transition-colors ${
-                  darkMode
-                    ? 'bg-[#1E1E2E] border-purple-500/30 text-white placeholder-gray-500 focus:border-purple-500'
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-purple-500'
-                } focus:outline-none focus:ring-2 focus:ring-purple-500/20`}
-                disabled={loading}
-                autoFocus
-              />
-            </div>
-
-            {error && (
-              <div className="flex items-center space-x-2 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <AlertCircle className="w-5 h-5 text-red-500" />
-                <span className="text-red-500 text-sm">{error}</span>
-              </div>
-            )}
-
-            {success && (
-              <div className="flex items-center space-x-2 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
-                <CheckCircle className="w-5 h-5 text-green-500" />
-                <span className="text-green-500 text-sm">{success}</span>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading || verificationCode.length !== 6}
-              className={`w-full py-3 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all ${
-                loading || verificationCode.length !== 6
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:shadow-lg transform hover:scale-105'
-              } text-white`}
-            >
-              {loading ? (
-                <>
-                  <Loader className="w-5 h-5 animate-spin" />
-                  <span>Verifying...</span>
-                </>
-              ) : (
-                <>
-                  <Shield className="w-5 h-5" />
-                  <span>Verify & Login</span>
-                </>
-              )}
-            </button>
-          </form>
-
-          <div className="mt-6 text-center">
-            <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Didn't receive the code?{' '}
-              <button
-                onClick={resendVerificationCode}
-                className="text-purple-500 font-semibold hover:text-purple-600 transition-colors"
-                disabled={loading}
-              >
-                Resend
-              </button>
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // Login/Register Mode
   return (
