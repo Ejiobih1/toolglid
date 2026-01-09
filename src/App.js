@@ -67,7 +67,7 @@ export default function PDFToolsApp() {
   const [selectedTool, setSelectedTool] = useState(null);
 
   // Authentication State (using Supabase Auth)
-  const { user, signOut, refreshUser, isPremium: isPremiumFromContext } = useAuth();
+  const { user, logout, refreshUser, isPremium: isPremiumFromContext } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Video requirements state
@@ -443,7 +443,7 @@ export default function PDFToolsApp() {
   // Handle login/logout
   const handleLogout = async () => {
     try {
-      await signOut();
+      await logout();
       setIsPremium(false);
       // Don't remove video-based access when logging out
     } catch (error) {
