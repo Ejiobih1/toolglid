@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Plus, Edit2, Trash2, Save, X, Youtube, Clock, Unlock } from 'lucide-react';
+import { Lock, Plus, Edit2, Trash2, Save, X, Youtube, Clock, Unlock, RefreshCw } from 'lucide-react';
+import { supabase } from './lib/supabase';
 
 export default function AdminPage({ darkMode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -7,9 +8,11 @@ export default function AdminPage({ darkMode }) {
   const [videos, setVideos] = useState([]);
   const [editingVideo, setEditingVideo] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Admin password (in production, this should be handled securely on backend)
-  const ADMIN_PASSWORD = 'admin123'; // Change this to your secure password
+  // Admin password from environment variable
+  const ADMIN_PASSWORD = process.env.REACT_APP_ADMIN_PASSWORD || 'SET_ADMIN_PASSWORD_IN_ENV';
 
   // Form state for adding/editing videos
   const [formData, setFormData] = useState({
@@ -19,29 +22,44 @@ export default function AdminPage({ darkMode }) {
     accessHours: '',
   });
 
-  // Load videos from localStorage on mount
+  // Load videos from Supabase on mount
   useEffect(() => {
-    const savedVideos = localStorage.getItem('admin_videos');
-    if (savedVideos) {
-      setVideos(JSON.parse(savedVideos));
-    } else {
-      // Default videos - Using real working YouTube video IDs
-      const defaultVideos = [
-        { id: '-6FYfcXFxn4', title: 'Your Channel Video', duration: 5, accessHours: 1 },
-        { id: 'ScMzIvxBSi4', title: 'Sample Video (1 min)', duration: 1, accessHours: 3 },
-        { id: 'aqz-KE-bpKQ', title: 'Test Video (2 min)', duration: 2, accessHours: 12 },
-        { id: 'jNQXAC9IVRw', title: 'Me at the zoo (Classic)', duration: 1, accessHours: 24 },
-      ];
-      setVideos(defaultVideos);
-      localStorage.setItem('admin_videos', JSON.stringify(defaultVideos));
-    }
-
     // Check if already authenticated
     const authStatus = sessionStorage.getItem('admin_authenticated');
     if (authStatus === 'true') {
       setIsAuthenticated(true);
+      loadVideos();
     }
   }, []);
+
+  // Fetch videos from Supabase
+  const loadVideos = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error } = await supabase
+        .from('videos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Transform data to match component format
+      const formattedVideos = data.map(video => ({
+        id: video.id,
+        title: video.title,
+        duration: video.duration,
+        accessHours: video.access_hours,
+      }));
+
+      setVideos(formattedVideos);
+    } catch (err) {
+      console.error('Error loading videos:', err);
+      setError('Failed to load videos. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -49,6 +67,7 @@ export default function AdminPage({ darkMode }) {
       setIsAuthenticated(true);
       sessionStorage.setItem('admin_authenticated', 'true');
       setPassword('');
+      loadVideos();
     } else {
       alert('Incorrect password!');
     }
@@ -57,6 +76,7 @@ export default function AdminPage({ darkMode }) {
   const handleLogout = () => {
     setIsAuthenticated(false);
     sessionStorage.removeItem('admin_authenticated');
+    setVideos([]);
   };
 
   const handleAddVideo = () => {
@@ -68,19 +88,39 @@ export default function AdminPage({ darkMode }) {
       duration: '',
       accessHours: '',
     });
+    setError(null);
   };
 
   const handleEditVideo = (video) => {
     setEditingVideo(video);
     setShowAddForm(true);
     setFormData(video);
+    setError(null);
   };
 
-  const handleDeleteVideo = (videoId) => {
-    if (window.confirm('Are you sure you want to delete this video?')) {
-      const updatedVideos = videos.filter(v => v.id !== videoId);
-      setVideos(updatedVideos);
-      localStorage.setItem('admin_videos', JSON.stringify(updatedVideos));
+  const handleDeleteVideo = async (videoId) => {
+    if (!window.confirm('Are you sure you want to delete this video?')) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const { error } = await supabase
+        .from('videos')
+        .delete()
+        .eq('id', videoId);
+
+      if (error) throw error;
+
+      // Remove from local state
+      setVideos(videos.filter(v => v.id !== videoId));
+      alert('Video deleted successfully!');
+    } catch (err) {
+      console.error('Error deleting video:', err);
+      setError('Failed to delete video: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -113,7 +153,7 @@ export default function AdminPage({ darkMode }) {
     return input.trim();
   };
 
-  const handleSaveVideo = (e) => {
+  const handleSaveVideo = async (e) => {
     e.preventDefault();
 
     // Validation
@@ -131,37 +171,71 @@ export default function AdminPage({ darkMode }) {
       return;
     }
 
-    const newVideo = {
+    const videoData = {
       id: videoId,
       title: formData.title,
       duration: parseInt(formData.duration),
-      accessHours: parseInt(formData.accessHours),
+      access_hours: parseInt(formData.accessHours),
     };
 
-    let updatedVideos;
-    if (editingVideo) {
-      // Update existing video
-      updatedVideos = videos.map(v => v.id === editingVideo.id ? newVideo : v);
-    } else {
-      // Add new video
-      if (videos.find(v => v.id === newVideo.id)) {
-        alert('Video ID already exists!');
-        return;
-      }
-      updatedVideos = [...videos, newVideo];
-    }
+    setLoading(true);
+    setError(null);
 
-    setVideos(updatedVideos);
-    localStorage.setItem('admin_videos', JSON.stringify(updatedVideos));
-    setShowAddForm(false);
-    setEditingVideo(null);
-    setFormData({ id: '', title: '', duration: '', accessHours: '' });
+    try {
+      if (editingVideo) {
+        // Update existing video
+        const { error } = await supabase
+          .from('videos')
+          .update({
+            title: videoData.title,
+            duration: videoData.duration,
+            access_hours: videoData.access_hours,
+          })
+          .eq('id', editingVideo.id);
+
+        if (error) throw error;
+
+        // Update local state
+        setVideos(videos.map(v =>
+          v.id === editingVideo.id
+            ? { ...v, title: videoData.title, duration: videoData.duration, accessHours: videoData.access_hours }
+            : v
+        ));
+        alert('Video updated successfully!');
+      } else {
+        // Add new video
+        const { error } = await supabase
+          .from('videos')
+          .insert([videoData]);
+
+        if (error) {
+          if (error.code === '23505') { // Unique violation
+            throw new Error('Video ID already exists!');
+          }
+          throw error;
+        }
+
+        // Reload videos to get the new one with timestamps
+        await loadVideos();
+        alert('Video added successfully!');
+      }
+
+      setShowAddForm(false);
+      setEditingVideo(null);
+      setFormData({ id: '', title: '', duration: '', accessHours: '' });
+    } catch (err) {
+      console.error('Error saving video:', err);
+      setError('Failed to save video: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancelForm = () => {
     setShowAddForm(false);
     setEditingVideo(null);
     setFormData({ id: '', title: '', duration: '', accessHours: '' });
+    setError(null);
   };
 
   if (!isAuthenticated) {
@@ -225,28 +299,48 @@ export default function AdminPage({ darkMode }) {
                 Admin Dashboard
               </h1>
               <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                Manage YouTube videos for access system
+                Manage YouTube videos - Stored in Supabase Database
               </p>
             </div>
-            <button
-              onClick={handleLogout}
-              className={`px-4 py-2 rounded-lg font-medium ${
-                darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              Logout
-            </button>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={loadVideos}
+                disabled={loading}
+                className={`p-2 rounded-lg ${
+                  darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                } disabled:opacity-50`}
+                title="Refresh videos"
+              >
+                <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={handleLogout}
+                className={`px-4 py-2 rounded-lg font-medium ${
+                  darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-100 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-lg">
+            <p className="text-red-700 dark:text-red-400 text-sm">{error}</p>
+          </div>
+        )}
+
         {/* Add Video Button */}
         <div className="mb-6">
           <button
             onClick={handleAddVideo}
-            className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all flex items-center space-x-2"
+            disabled={loading}
+            className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all flex items-center space-x-2 disabled:opacity-50"
           >
             <Plus className="w-5 h-5" />
             <span>Add New Video</span>
@@ -347,18 +441,20 @@ export default function AdminPage({ darkMode }) {
                 <button
                   type="button"
                   onClick={handleCancelForm}
+                  disabled={loading}
                   className={`px-6 py-2 rounded-lg font-medium ${
                     darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
+                  } disabled:opacity-50`}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all flex items-center space-x-2"
+                  disabled={loading}
+                  className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg font-medium hover:shadow-lg transition-all flex items-center space-x-2 disabled:opacity-50"
                 >
                   <Save className="w-5 h-5" />
-                  <span>{editingVideo ? 'Update Video' : 'Add Video'}</span>
+                  <span>{loading ? 'Saving...' : editingVideo ? 'Update Video' : 'Add Video'}</span>
                 </button>
               </div>
             </form>
@@ -374,7 +470,14 @@ export default function AdminPage({ darkMode }) {
           </div>
 
           <div className="divide-y divide-gray-200 dark:divide-gray-700">
-            {videos.length === 0 ? (
+            {loading && videos.length === 0 ? (
+              <div className="px-6 py-12 text-center">
+                <RefreshCw className={`w-16 h-16 mx-auto mb-4 animate-spin ${darkMode ? 'text-purple-500' : 'text-purple-600'}`} />
+                <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Loading videos from database...
+                </p>
+              </div>
+            ) : videos.length === 0 ? (
               <div className="px-6 py-12 text-center">
                 <Youtube className={`w-16 h-16 mx-auto mb-4 ${darkMode ? 'text-gray-600' : 'text-gray-400'}`} />
                 <p className={`${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -412,14 +515,16 @@ export default function AdminPage({ darkMode }) {
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => handleEditVideo(video)}
-                        className={`p-2 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400 transition-colors`}
+                        disabled={loading}
+                        className={`p-2 rounded-lg hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-600 dark:text-purple-400 transition-colors disabled:opacity-50`}
                         title="Edit"
                       >
                         <Edit2 className="w-5 h-5" />
                       </button>
                       <button
                         onClick={() => handleDeleteVideo(video.id)}
-                        className={`p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition-colors`}
+                        disabled={loading}
+                        className={`p-2 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 transition-colors disabled:opacity-50`}
                         title="Delete"
                       >
                         <Trash2 className="w-5 h-5" />
@@ -435,13 +540,19 @@ export default function AdminPage({ darkMode }) {
         {/* Instructions */}
         <div className={`mt-6 p-6 rounded-2xl ${darkMode ? 'bg-[#2A2A3E]' : 'bg-blue-50'}`}>
           <h3 className={`font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            💾 Database Storage Active
+          </h3>
+          <p className={`text-sm mb-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+            Videos are now stored in Supabase database. Changes sync across all devices automatically!
+          </p>
+          <h3 className={`font-semibold mb-2 mt-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
             How to find YouTube Video ID:
           </h3>
           <ol className={`list-decimal list-inside space-y-1 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
             <li>Go to your YouTube video</li>
             <li>Copy the URL (e.g., https://www.youtube.com/watch?v=<strong>dQw4w9WgXcQ</strong>)</li>
             <li>The Video ID is the part after "v=" (in this case: <strong>dQw4w9WgXcQ</strong>)</li>
-            <li>Paste only the Video ID in the form above</li>
+            <li>Paste the full URL or just the ID - both work!</li>
           </ol>
         </div>
       </main>

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { authAPI, isAuthenticated } from '../services/api';
+import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext();
 
@@ -15,77 +15,167 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
+  const [session, setSession] = useState(null);
 
-  // Load user on mount
+  // Load user and set up auth state listener
   useEffect(() => {
-    const loadUser = async () => {
-      if (!isAuthenticated()) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const data = await authAPI.getCurrentUser();
-        setUser(data.user);
-        setIsPremium(data.user.isPremium);
-      } catch (error) {
-        console.error('Failed to load user:', error);
-        authAPI.logout();
-      } finally {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        loadUserProfile(session.user);
+      } else {
         setLoading(false);
       }
-    };
+    });
 
-    loadUser();
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        loadUserProfile(session.user);
+      } else {
+        setUser(null);
+        setIsPremium(false);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
+  // Load user profile data from database
+  const loadUserProfile = async (authUser) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+
+      if (error) throw error;
+
+      setUser({
+        id: authUser.id,
+        email: authUser.email,
+        isPremium: data?.is_premium || false,
+        ...data
+      });
+      setIsPremium(data?.is_premium || false);
+    } catch (error) {
+      console.error('Failed to load user profile:', error);
+      // Create user profile if it doesn't exist
+      await createUserProfile(authUser);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create user profile in database
+  const createUserProfile = async (authUser) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .insert([
+          {
+            id: authUser.id,
+            email: authUser.email,
+            is_premium: false,
+            created_at: new Date().toISOString()
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setUser({
+        id: authUser.id,
+        email: authUser.email,
+        isPremium: false,
+        ...data
+      });
+      setIsPremium(false);
+    } catch (error) {
+      console.error('Failed to create user profile:', error);
+    }
+  };
+
+  // Login with email and password
   const login = async (email, password) => {
     try {
-      const data = await authAPI.login(email, password);
-      setUser(data.user);
-      setIsPremium(data.user.isPremium);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      await loadUserProfile(data.user);
       return { success: true, user: data.user };
     } catch (error) {
       return { success: false, error: error.message };
     }
   };
 
+  // Register new user
   const register = async (email, password) => {
     try {
-      const data = await authAPI.register(email, password);
-      setUser(data.user);
-      setIsPremium(data.user.isPremium);
-      return { success: true, user: data.user };
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+      if (error) throw error;
+
+      // Supabase will send a confirmation email by default
+      // User profile will be created on first login
+      return {
+        success: true,
+        user: data.user,
+        message: 'Please check your email to confirm your account.'
+      };
     } catch (error) {
       return { success: false, error: error.message };
     }
   };
 
-  const logout = () => {
-    authAPI.logout();
-    setUser(null);
-    setIsPremium(false);
+  // Logout
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setUser(null);
+      setIsPremium(false);
+      setSession(null);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
+  // Refresh user data
   const refreshUser = async () => {
-    try {
-      const data = await authAPI.getCurrentUser();
-      setUser(data.user);
-      setIsPremium(data.user.isPremium);
-    } catch (error) {
-      console.error('Failed to refresh user:', error);
-    }
+    if (!session?.user) return;
+    await loadUserProfile(session.user);
+  };
+
+  // Get access token for API calls
+  const getAccessToken = () => {
+    return session?.access_token || null;
   };
 
   const value = {
     user,
     loading,
     isPremium,
-    isAuthenticated: !!user,
+    isAuthenticated: !!user && !!session,
+    session,
     login,
     register,
     logout,
     refreshUser,
+    getAccessToken,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

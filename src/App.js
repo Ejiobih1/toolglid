@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Moon, Sun, Lock, Clock, Play, FileText, Scissors, Minimize2, Image, FileImage, Type, Shield, RotateCw, Crown, X, Upload, Download, AlertCircle, CheckCircle, Loader, Hash, Trash2, FileDown, FileEdit, PenTool, Crop, Maximize2, Layers, AlignCenter, ArrowUpDown, LogOut, LogIn, User as UserIcon } from 'lucide-react';
+import { useAuth } from './context/AuthContext';
+import { supabase } from './lib/supabase';
 import {
   mergePDFs,
   splitPDF,
@@ -29,7 +31,8 @@ import { RotateEditor, CropEditor, OrganizePagesEditor, ExtractDeletePagesEditor
 import AdminPage from './AdminPage';
 import VideoRequirements from './components/VideoRequirements';
 import AuthModal from './components/AuthModal';
-import { videoAPI, paymentAPI } from './services/api';
+import PremiumCheckout from './components/PremiumCheckout';
+import { videoAPI } from './services/api';
 import {
   getUserId,
   hasUserSubscribed,
@@ -38,6 +41,9 @@ import {
   getWelcomeMessage,
   updateLastVisit
 } from './utils/userTracking';
+
+// Maximum file size: 50MB (in bytes)
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export default function PDFToolsApp() {
   // Check if on admin page
@@ -60,8 +66,8 @@ export default function PDFToolsApp() {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [selectedTool, setSelectedTool] = useState(null);
 
-  // Authentication State
-  const [user, setUser] = useState(null);
+  // Authentication State (using Supabase Auth)
+  const { user, signOut, refreshUser, isPremium: isPremiumFromContext } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Video requirements state
@@ -134,38 +140,88 @@ export default function PDFToolsApp() {
     // Update last visit
     updateLastVisit();
 
-    // Load authenticated user
-    const loadUser = async () => {
-      const authToken = localStorage.getItem('auth_token');
-      if (authToken) {
-        try {
-          const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-          const response = await fetch(`${API_BASE_URL}/auth/me`, {
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-            },
-          });
+    // Clean up old auth tokens from localStorage (legacy from backend auth)
+    localStorage.removeItem('auth_token');
+  }, []);
 
-          if (response.ok) {
-            const data = await response.json();
-            setUser(data.user);
-            // Update premium status from backend
-            if (data.user.isPremium) {
+  // Sync local isPremium state with context
+  useEffect(() => {
+    console.log('User changed:', user);
+    console.log('isPremiumFromContext:', isPremiumFromContext);
+    console.log('user?.isPremium:', user?.isPremium);
+
+    if (isPremiumFromContext || user?.isPremium) {
+      console.log('Setting premium status to true');
+      setIsPremium(true);
+      setIsUnlocked(true);
+    }
+  }, [isPremiumFromContext, user]);
+
+  // Detect Stripe checkout success and update premium status
+  useEffect(() => {
+    const handleCheckoutSuccess = async () => {
+      // Check if returning from Stripe checkout
+      const urlParams = new URLSearchParams(window.location.search);
+      const checkoutSuccess = urlParams.get('checkout') === 'success';
+
+      if (checkoutSuccess && user) {
+        try {
+          console.log('Detected successful checkout, refreshing premium status...');
+
+          // Poll for premium status (webhook might take a few seconds)
+          let attempts = 0;
+          const maxAttempts = 10;
+          const pollInterval = 2000; // 2 seconds
+
+          const checkPremiumStatus = async () => {
+            // Refresh user profile from context
+            await refreshUser();
+
+            // Check database directly
+            const { data } = await supabase
+              .from('users')
+              .select('is_premium')
+              .eq('id', user.id)
+              .single();
+
+            if (data?.is_premium) {
+              // Premium status confirmed!
+              console.log('Premium subscription activated!');
               setIsPremium(true);
               setIsUnlocked(true);
+
+              // Clean up URL
+              window.history.replaceState({}, document.title, window.location.pathname);
+              return true;
             }
-          } else {
-            // Invalid token, remove it
-            localStorage.removeItem('auth_token');
+            return false;
+          };
+
+          // Initial check
+          const foundPremium = await checkPremiumStatus();
+
+          // If not premium yet, poll for it
+          if (!foundPremium) {
+            const pollTimer = setInterval(async () => {
+              attempts++;
+              const found = await checkPremiumStatus();
+
+              if (found || attempts >= maxAttempts) {
+                clearInterval(pollTimer);
+                if (!found) {
+                  console.log('Premium status not updated yet. Please refresh in a moment.');
+                }
+              }
+            }, pollInterval);
           }
         } catch (error) {
-          console.error('Failed to load user:', error);
+          console.error('Failed to refresh premium status:', error);
         }
       }
     };
 
-    loadUser();
-  }, []);
+    handleCheckoutSuccess();
+  }, [user, refreshUser]); // Run when user changes
 
   // Add keyboard shortcut for reset (Ctrl+Shift+R)
   useEffect(() => {
@@ -243,7 +299,7 @@ export default function PDFToolsApp() {
     { id: 'extract-pages', icon: FileDown, name: 'Extract Pages', desc: 'Extract specific pages from PDF', accept: '.pdf', multiple: false },
     { id: 'delete-pages', icon: Trash2, name: 'Delete Pages', desc: 'Remove unwanted pages from PDF', accept: '.pdf', multiple: false },
     { id: 'crop', icon: Crop, name: 'Crop PDF', desc: 'Trim margins and resize pages', accept: '.pdf', multiple: false },
-    { id: 'resize', icon: Maximize2, name: 'Resize PDF', desc: 'Change page size (A4, Letter, etc.)', accept: '.pdf', multiple: false },
+    { id: 'protect', icon: Shield, name: 'Add Watermark', desc: 'Add custom watermark to prove ownership', accept: '.pdf', multiple: false },
 
     // ========== FEATURES TO ADD LATER (Post-Launch) ==========
     // Uncomment and test these one by one after launch
@@ -384,43 +440,25 @@ export default function PDFToolsApp() {
     setShowRequirements(true);
   };
 
-  // Handle premium upgrade
-  const handlePremiumUpgrade = async () => {
-    // Check if user is logged in
-    if (!user) {
-      setShowAuthModal(true);
-      return;
-    }
-
-    try {
-      // Create Stripe checkout session
-      const data = await paymentAPI.createCheckoutSession();
-
-      if (data.url) {
-        // Redirect to Stripe checkout
-        window.location.href = data.url;
-      }
-    } catch (error) {
-      console.error('Failed to create checkout session:', error);
-      alert('Failed to start checkout. Please try again.');
-    }
-  };
-
   // Handle login/logout
-  const handleLogout = () => {
-    localStorage.removeItem('auth_token');
-    setUser(null);
-    setIsPremium(false);
-    // Don't remove video-based access when logging out
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      setIsPremium(false);
+      // Don't remove video-based access when logging out
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
-  const handleAuthSuccess = (userData) => {
-    setUser(userData);
-    if (userData.isPremium) {
+  const handleAuthSuccess = () => {
+    // AuthContext handles user state automatically
+    setShowAuthModal(false);
+    // Check if user has premium status
+    if (user?.isPremium) {
       setIsPremium(true);
       setIsUnlocked(true);
     }
-    setShowAuthModal(false);
   };
 
   // Handle tool selection
@@ -440,7 +478,18 @@ export default function PDFToolsApp() {
   const handleFileInputChange = (event) => {
     const selectedFiles = event.target.files;
     if (selectedFiles && selectedFiles.length > 0) {
-      setFiles(Array.from(selectedFiles));
+      const filesArray = Array.from(selectedFiles);
+
+      // Validate file sizes
+      const oversizedFiles = filesArray.filter(file => file.size > MAX_FILE_SIZE);
+      if (oversizedFiles.length > 0) {
+        const fileNames = oversizedFiles.map(f => f.name).join(', ');
+        const sizeMB = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+        setError(`File(s) too large: ${fileNames}. Maximum file size is ${sizeMB}MB. Please use smaller files to avoid browser memory issues.`);
+        return;
+      }
+
+      setFiles(filesArray);
       setError(null);
     }
   };
@@ -457,7 +506,18 @@ export default function PDFToolsApp() {
 
     const droppedFiles = event.dataTransfer.files;
     if (droppedFiles && droppedFiles.length > 0) {
-      setFiles(Array.from(droppedFiles));
+      const filesArray = Array.from(droppedFiles);
+
+      // Validate file sizes
+      const oversizedFiles = filesArray.filter(file => file.size > MAX_FILE_SIZE);
+      if (oversizedFiles.length > 0) {
+        const fileNames = oversizedFiles.map(f => f.name).join(', ');
+        const sizeMB = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+        setError(`File(s) too large: ${fileNames}. Maximum file size is ${sizeMB}MB. Please use smaller files to avoid browser memory issues.`);
+        return;
+      }
+
+      setFiles(filesArray);
       setError(null);
     }
   };
@@ -492,11 +552,13 @@ export default function PDFToolsApp() {
 
         case 'split':
           resultFiles = await splitPDF(files[0]);
-          setResult({
+          const splitResult = {
             files: resultFiles,
             message: `Successfully split into ${resultFiles.length} pages!`,
             multiFile: true
-          });
+          };
+          setResult(splitResult);
+          showResultPreview(splitResult);
           setProcessing(false);
           return;
 
@@ -507,11 +569,13 @@ export default function PDFToolsApp() {
 
         case 'pdf-to-jpg':
           resultFiles = await pdfToJPG(files[0]);
-          setResult({
+          const jpgResult = {
             files: resultFiles,
             message: `Successfully converted ${resultFiles.length} pages to JPG!`,
             multiFile: true
-          });
+          };
+          setResult(jpgResult);
+          showResultPreview(jpgResult);
           setProcessing(false);
           return;
 
@@ -549,11 +613,13 @@ export default function PDFToolsApp() {
 
         case 'pdf-to-png':
           resultFiles = await pdfToPNG(files[0]);
-          setResult({
+          const pngResult = {
             files: resultFiles,
             message: `Successfully converted ${resultFiles.length} pages to PNG!`,
             multiFile: true
-          });
+          };
+          setResult(pngResult);
+          showResultPreview(pngResult);
           setProcessing(false);
           return;
 
@@ -609,11 +675,13 @@ export default function PDFToolsApp() {
 
         case 'extract-images':
           resultFiles = await extractImages(files[0]);
-          setResult({
+          const imagesResult = {
             files: resultFiles,
             message: `Successfully extracted ${resultFiles.length} images!`,
             multiFile: true
-          });
+          };
+          setResult(imagesResult);
+          showResultPreview(imagesResult);
           setProcessing(false);
           return;
 
@@ -647,12 +715,14 @@ export default function PDFToolsApp() {
 
       if (resultBlob) {
         const size = getFileSizeMB(resultBlob);
-        setResult({
+        const singleFileResult = {
           blob: resultBlob,
           filename,
           size: `${size} MB`,
           message: 'Your file has been processed successfully!'
-        });
+        };
+        setResult(singleFileResult);
+        showResultPreview(singleFileResult);
       }
 
       setProcessing(false);
@@ -673,12 +743,14 @@ export default function PDFToolsApp() {
       const filename = `rotated_${rotation}_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const rotateResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: 'Your PDF has been rotated successfully!'
-      });
+      };
+      setResult(rotateResult);
+      showResultPreview(rotateResult);
     } catch (error) {
       console.error('Rotation error:', error);
       setError(error.message || 'Failed to rotate PDF');
@@ -697,12 +769,14 @@ export default function PDFToolsApp() {
       const filename = `cropped_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const cropResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: 'Your PDF has been cropped successfully!'
-      });
+      };
+      setResult(cropResult);
+      showResultPreview(cropResult);
     } catch (error) {
       console.error('Crop error:', error);
       setError(error.message || 'Failed to crop PDF');
@@ -721,12 +795,14 @@ export default function PDFToolsApp() {
       const filename = `organized_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const organizeResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: 'Your pages have been reorganized successfully!'
-      });
+      };
+      setResult(organizeResult);
+      showResultPreview(organizeResult);
     } catch (error) {
       console.error('Organize pages error:', error);
       setError(error.message || 'Failed to organize pages');
@@ -745,12 +821,14 @@ export default function PDFToolsApp() {
       const filename = `extracted_pages_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const extractResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: `Successfully extracted ${pageNumbers.length} page(s)!`
-      });
+      };
+      setResult(extractResult);
+      showResultPreview(extractResult);
     } catch (error) {
       console.error('Extract pages error:', error);
       setError(error.message || 'Failed to extract pages');
@@ -769,12 +847,14 @@ export default function PDFToolsApp() {
       const filename = `deleted_pages_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const deleteResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: `Successfully deleted ${pageNumbers.length} page(s)!`
-      });
+      };
+      setResult(deleteResult);
+      showResultPreview(deleteResult);
     } catch (error) {
       console.error('Delete pages error:', error);
       setError(error.message || 'Failed to delete pages');
@@ -793,12 +873,14 @@ export default function PDFToolsApp() {
       const filename = `resized_${pageSize.name}_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const resizeResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: `Successfully resized to ${pageSize.label}!`
-      });
+      };
+      setResult(resizeResult);
+      showResultPreview(resizeResult);
     } catch (error) {
       console.error('Resize error:', error);
       setError(error.message || 'Failed to resize PDF');
@@ -817,12 +899,14 @@ export default function PDFToolsApp() {
       const filename = `numbered_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const numbersResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: 'Successfully added page numbers!'
-      });
+      };
+      setResult(numbersResult);
+      showResultPreview(numbersResult);
     } catch (error) {
       console.error('Add page numbers error:', error);
       setError(error.message || 'Failed to add page numbers');
@@ -832,21 +916,32 @@ export default function PDFToolsApp() {
   };
 
   // Handle watermark editor completion
-  const handleWatermarkComplete = async ({ text, opacity, fontSize, rotation, color }) => {
+  const handleWatermarkComplete = async ({ watermarkType, text, opacity, fontSize, rotation, color, logoFile, logoPreview, logoSize }) => {
     setShowWatermarkEditor(false);
     setProcessing(true);
 
     try {
-      const resultBlob = await protectPDF(files[0], text, { opacity, fontSize, rotation, color });
+      const resultBlob = await protectPDF(files[0], text, {
+        watermarkType,
+        opacity,
+        fontSize,
+        rotation,
+        color,
+        logoFile,
+        logoPreview,
+        logoSize
+      });
       const filename = `watermarked_${Date.now()}.pdf`;
       const size = getFileSizeMB(resultBlob);
 
-      setResult({
+      const watermarkResult = {
         blob: resultBlob,
         filename,
         size: `${size} MB`,
         message: 'Successfully added watermark!'
-      });
+      };
+      setResult(watermarkResult);
+      showResultPreview(watermarkResult);
     } catch (error) {
       console.error('Add watermark error:', error);
       setError(error.message || 'Failed to add watermark');
@@ -890,6 +985,13 @@ export default function PDFToolsApp() {
   const resetTool = () => {
     setResult(null);
     setFiles([]);
+  };
+
+  // Show success message with manual download button
+  const showResultPreview = (resultData) => {
+    // Just show the success message with download button
+    // The result state is already set by the calling function
+    // User can click the download button manually
   };
 
   // Close modals
@@ -1080,12 +1182,7 @@ export default function PDFToolsApp() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={handlePremiumUpgrade}
-                className="px-8 py-4 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-lg font-bold text-lg hover:shadow-lg transition-all"
-              >
-                Only $4.99/month
-              </button>
+              <PremiumCheckout darkMode={darkMode} />
             </div>
           </div>
         )}
@@ -1191,13 +1288,7 @@ export default function PDFToolsApp() {
                         </p>
                       </div>
                     </div>
-                    <button
-                      disabled
-                      className="px-6 py-3 bg-gray-400 text-white rounded-lg font-semibold cursor-not-allowed"
-                      title="Premium payments coming soon"
-                    >
-                      Coming Soon
-                    </button>
+                    <PremiumCheckout darkMode={darkMode} />
                   </div>
                 </div>
               </div>
@@ -1387,9 +1478,9 @@ export default function PDFToolsApp() {
 
                 <button
                   onClick={processPDF}
-                  disabled={processing || files.length === 0}
+                  disabled={processing || files.length === 0 || (selectedTool.id === 'merge' && files.length < 2)}
                   className={`w-full mt-6 py-4 rounded-lg font-semibold flex items-center justify-center space-x-2 transition-all ${
-                    processing || files.length === 0
+                    processing || files.length === 0 || (selectedTool.id === 'merge' && files.length < 2)
                       ? 'bg-gray-400 cursor-not-allowed'
                       : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:shadow-lg transform hover:scale-105'
                   } text-white`}

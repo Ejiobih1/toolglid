@@ -1,0 +1,19 @@
+# Supabase Configuration File
+# Auto-generated - modify with caution
+
+[api]
+enabled = true
+port = 54321
+max_rows = 1000
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["https://localhost:3000"]
+jwt_expiry = 2592000  # 30 days
+
+[functions.stripe-webhook]
+verify_jwt = false  # Stripe doesn't send JWTs
+
+[functions.create-checkout]
+verify_jwt = true  # Requires authenticated user

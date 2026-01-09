@@ -1,154 +1,138 @@
-// Use environment variable for API URL, fallback to localhost for development
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+import { supabase } from '../lib/supabase';
 
-// Get stored auth token
-const getAuthToken = () => {
-  return localStorage.getItem('auth_token');
+// DEPRECATED - Backend API no longer needed, using Supabase for all operations
+// const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+// Get Supabase auth token
+const getAuthToken = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || null;
 };
 
-// Set auth token
-const setAuthToken = (token) => {
-  localStorage.setItem('auth_token', token);
+// DEPRECATED - API request wrapper no longer needed, using Supabase directly
+// const apiRequest = async (endpoint, options = {}) => {
+//   const token = await getAuthToken();
+//   const headers = {
+//     'Content-Type': 'application/json',
+//     ...options.headers,
+//   };
+//   if (token) {
+//     headers['Authorization'] = `Bearer ${token}`;
+//   }
+//   const config = {
+//     ...options,
+//     headers,
+//   };
+//   try {
+//     const response = await fetch(`${API_URL}${endpoint}`, config);
+//     const data = await response.json();
+//     if (!response.ok) {
+//       throw new Error(data.error || data.message || 'Request failed');
+//     }
+//     return data;
+//   } catch (error) {
+//     console.error('API request failed:', error);
+//     throw error;
+//   }
+// };
+
+// Helper to check if user is authenticated
+export const isAuthenticated = async () => {
+  const { data: { session } } = await supabase.auth.getSession();
+  return !!session;
 };
 
-// Remove auth token
-const removeAuthToken = () => {
-  localStorage.removeItem('auth_token');
-};
+// Payment APIs - DEPRECATED - Now using Supabase Edge Functions
+// Stripe payments are handled by:
+// - supabase/functions/create-checkout for creating checkout sessions
+// - supabase/functions/stripe-webhook for webhook handling
+// See PremiumCheckout component for implementation
 
-// API request wrapper with auth header
-const apiRequest = async (endpoint, options = {}) => {
-  const token = getAuthToken();
-
-  const headers = {
-    'Content-Type': 'application/json',
-    ...options.headers,
-  };
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const config = {
-    ...options,
-    headers,
-  };
-
-  try {
-    const response = await fetch(`${API_URL}${endpoint}`, config);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || data.message || 'Request failed');
-    }
-
-    return data;
-  } catch (error) {
-    console.error('API request failed:', error);
-    throw error;
-  }
-};
-
-// Authentication APIs
-export const authAPI = {
-  // Register new user
-  register: async (email, password) => {
-    const data = await apiRequest('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (data.token) {
-      setAuthToken(data.token);
-    }
-
-    return data;
-  },
-
-  // Login user
-  login: async (email, password) => {
-    const data = await apiRequest('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (data.token) {
-      setAuthToken(data.token);
-    }
-
-    return data;
-  },
-
-  // Get current user
-  getCurrentUser: async () => {
-    return await apiRequest('/auth/me');
-  },
-
-  // Check premium status
-  checkPremium: async () => {
-    return await apiRequest('/auth/check-premium');
-  },
-
-  // Logout
-  logout: () => {
-    removeAuthToken();
-  },
-};
-
-// Payment APIs
-export const paymentAPI = {
-  // Create Stripe checkout session
-  createCheckoutSession: async () => {
-    return await apiRequest('/payments/create-checkout-session', {
-      method: 'POST',
-    });
-  },
-
-  // Cancel subscription
-  cancelSubscription: async () => {
-    return await apiRequest('/payments/cancel-subscription', {
-      method: 'POST',
-    });
-  },
-};
-
-// Video APIs
+// Video APIs (using Supabase)
 export const videoAPI = {
   // Get all videos
   getAll: async () => {
-    const response = await fetch(`${API_URL}/videos`);
-    const data = await response.json();
-    return data.videos || [];
+    try {
+      const { data, error } = await supabase
+        .from('videos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching videos:', error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Failed to fetch videos:', error);
+      return [];
+    }
   },
 
   // Add video (admin only)
   add: async (videoData) => {
-    return await apiRequest('/videos', {
-      method: 'POST',
-      body: JSON.stringify(videoData),
-    });
+    try {
+      const { data, error } = await supabase
+        .from('videos')
+        .insert([videoData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding video:', error);
+        throw error;
+      }
+
+      return { success: true, video: data };
+    } catch (error) {
+      console.error('Failed to add video:', error);
+      throw error;
+    }
   },
 
   // Update video (admin only)
   update: async (id, videoData) => {
-    return await apiRequest(`/videos/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(videoData),
-    });
+    try {
+      const { data, error } = await supabase
+        .from('videos')
+        .update(videoData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating video:', error);
+        throw error;
+      }
+
+      return { success: true, video: data };
+    } catch (error) {
+      console.error('Failed to update video:', error);
+      throw error;
+    }
   },
 
   // Delete video (admin only)
   delete: async (id) => {
-    return await apiRequest(`/videos/${id}`, {
-      method: 'DELETE',
-    });
+    try {
+      const { error } = await supabase
+        .from('videos')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error deleting video:', error);
+        throw error;
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to delete video:', error);
+      throw error;
+    }
   },
 };
 
-// Helper to check if user is authenticated
-export const isAuthenticated = () => {
-  return !!getAuthToken();
-};
-
-// Export token management
-export { getAuthToken, setAuthToken, removeAuthToken };
+// Export auth token getter
+export { getAuthToken };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RotateCw, Check, X, Move, ZoomIn, ZoomOut, Trash2, GripVertical, Plus, Minus } from 'lucide-react';
+import { RotateCw, Check, X, Move, ZoomIn, ZoomOut, Trash2, GripVertical, Plus, Minus, Upload } from 'lucide-react';
 
 // Visual Rotate Tool Component
 export function RotateEditor({ file, onComplete, onCancel, darkMode }) {
@@ -44,7 +44,19 @@ export function RotateEditor({ file, onComplete, onCancel, darkMode }) {
     const context = canvas.getContext('2d');
     const page = pdfPages[0];
 
-    const scale = 1.5;
+    // Calculate available height (viewport height minus header, footer, padding)
+    // This ensures buttons are always visible
+    const maxHeight = window.innerHeight * 0.5; // Max 50% of viewport height
+    const maxWidth = 600; // Max width for preview
+
+    // Get base viewport to calculate proper scaling
+    const baseViewport = page.getViewport({ scale: 1, rotation: currentRotation });
+
+    // Calculate scale to fit within constraints
+    const scaleWidth = maxWidth / baseViewport.width;
+    const scaleHeight = maxHeight / baseViewport.height;
+    const scale = Math.min(scaleWidth, scaleHeight, 1.2); // Cap at 1.2x
+
     const viewport = page.getViewport({ scale, rotation: currentRotation });
 
     canvas.width = viewport.width;
@@ -69,7 +81,7 @@ export function RotateEditor({ file, onComplete, onCancel, darkMode }) {
 
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm`}>
-      <div className={`max-w-4xl w-full mx-4 rounded-xl shadow-2xl ${darkMode ? 'bg-[#1E1E2E]' : 'bg-white'}`}>
+      <div className={`max-w-4xl w-full mx-4 rounded-xl shadow-2xl overflow-visible ${darkMode ? 'bg-[#1E1E2E]' : 'bg-white'}`}>
         {/* Header */}
         <div className={`px-6 py-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <div className="flex items-center justify-between">
@@ -89,14 +101,14 @@ export function RotateEditor({ file, onComplete, onCancel, darkMode }) {
         <div className={`p-6 ${darkMode ? 'bg-[#151521]' : 'bg-gray-50'}`}>
           <div className="flex flex-col items-center space-y-6">
             {/* Canvas Preview */}
-            <div className={`relative border-2 ${darkMode ? 'border-gray-700' : 'border-gray-300'} rounded-lg overflow-hidden bg-gray-100`}>
+            <div className={`relative border-2 ${darkMode ? 'border-gray-700' : 'border-gray-300'} rounded-lg overflow-hidden bg-gray-100`} style={{ maxHeight: '50vh' }}>
               {loading ? (
                 <div className="w-96 h-96 flex items-center justify-center">
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
                 </div>
               ) : (
                 <>
-                  <canvas ref={canvasRef} className="max-w-full h-auto" />
+                  <canvas ref={canvasRef} className="max-w-full h-auto" style={{ maxHeight: '50vh' }} />
                   {/* Rotate Button Overlay */}
                   <button
                     onClick={rotate}
@@ -157,7 +169,10 @@ export function RotateEditor({ file, onComplete, onCancel, darkMode }) {
         </div>
 
         {/* Footer */}
-        <div className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-end space-x-3`}>
+        <div
+          className={`px-6 py-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex justify-end space-x-3`}
+          style={{ position: 'relative', zIndex: 50 }}
+        >
           <button
             onClick={onCancel}
             className={`px-6 py-2 rounded-lg font-medium ${
@@ -188,22 +203,49 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
   const [cropArea, setCropArea] = useState({ top: 50, right: 50, bottom: 50, left: 50 });
   const [dragging, setDragging] = useState(null);
   const canvasRef = useRef(null);
+  const overlayRef = useRef(null);
+  const animationFrameRef = useRef(null);
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [scale, setScale] = useState(1);
+  const renderTaskRef = useRef(null);
 
   useEffect(() => {
     loadPDF();
+    return () => {
+      // Cleanup
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch (e) {}
+      }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
   }, [file]);
 
+  // Render PDF when page loads or scale changes
   useEffect(() => {
-    if (pdfPage) {
-      renderPreview();
+    if (pdfPage && containerRef.current) {
+      // Small delay to ensure DOM is ready
+      const timer = setTimeout(() => {
+        renderPDF();
+      }, 50);
+      return () => clearTimeout(timer);
     }
-  }, [pdfPage, cropArea, scale]);
+  }, [pdfPage, scale]);
+
+  // Render crop overlay when crop area or dimensions change
+  useEffect(() => {
+    if (dimensions.width > 0 && dimensions.height > 0) {
+      drawCropOverlay();
+    }
+  }, [cropArea, dimensions]);
 
   const loadPDF = async () => {
     try {
+      setLoading(true);
       const arrayBuffer = await file.arrayBuffer();
       const pdfjsLib = window['pdfjs-dist/build/pdf'];
       pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
@@ -220,62 +262,109 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
     }
   };
 
-  const renderPreview = async () => {
+  const renderPDF = async () => {
     if (!pdfPage || !canvasRef.current || !containerRef.current) return;
 
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
+    try {
+      // Cancel any existing render task
+      if (renderTaskRef.current) {
+        try {
+          renderTaskRef.current.cancel();
+        } catch (e) {}
+        renderTaskRef.current = null;
+      }
 
-    // Calculate scale to fit the PDF in the viewport
-    const containerWidth = containerRef.current.clientWidth - 40; // Padding
-    const maxHeight = window.innerHeight * 0.6; // Max 60% of viewport height
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d', { alpha: false });
+      const container = containerRef.current;
 
-    const baseViewport = pdfPage.getViewport({ scale: 1 });
-    const widthScale = containerWidth / baseViewport.width;
-    const heightScale = maxHeight / baseViewport.height;
-    const autoScale = Math.min(widthScale, heightScale, 1.5) * scale; // Apply zoom scale
+      // Ensure container has rendered
+      const containerWidth = Math.max(container.clientWidth || 800, 400) - 40;
+      const maxHeight = Math.max(window.innerHeight * 0.6, 400);
 
-    const viewport = pdfPage.getViewport({ scale: autoScale });
+      // Get base viewport at scale 1 with no rotation
+      const baseViewport = pdfPage.getViewport({ scale: 1, rotation: 0 });
 
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    setDimensions({ width: viewport.width, height: viewport.height });
+      // Calculate scale to fit within container
+      const scaleX = containerWidth / baseViewport.width;
+      const scaleY = maxHeight / baseViewport.height;
+      const optimalScale = Math.min(scaleX, scaleY, 1.5);
 
-    // Clear canvas first
-    context.clearRect(0, 0, canvas.width, canvas.height);
-    context.fillStyle = 'white';
-    context.fillRect(0, 0, canvas.width, canvas.height);
+      // Apply user's zoom
+      const finalScale = optimalScale * scale;
 
-    // Render PDF with proper transform to prevent flipping
-    context.save();
-    await pdfPage.render({
-      canvasContext: context,
-      viewport: viewport,
-      transform: null // Ensure no transform is applied
-    }).promise;
-    context.restore();
+      // Get final viewport
+      const viewport = pdfPage.getViewport({ scale: finalScale, rotation: 0 });
 
-    // Draw crop overlay
-    context.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      // Set canvas size
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+
+      // Set canvas display size to match actual size (prevents scaling issues)
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+
+      // Update dimensions
+      setDimensions({ width: viewport.width, height: viewport.height });
+
+      // Clear and fill white background
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Render PDF
+      renderTaskRef.current = pdfPage.render({
+        canvasContext: context,
+        viewport: viewport
+      });
+
+      await renderTaskRef.current.promise;
+      renderTaskRef.current = null;
+
+      // Draw overlay
+      setTimeout(() => drawCropOverlay(), 0);
+
+    } catch (error) {
+      if (error && error.name !== 'RenderingCancelledException') {
+        console.error('Error rendering PDF:', error);
+      }
+    }
+  };
+
+  // Draws crop overlay only (not PDF) - called when crop area changes
+  const drawCropOverlay = () => {
+    if (!overlayRef.current || dimensions.width === 0) return;
+
+    const overlay = overlayRef.current;
+    const ctx = overlay.getContext('2d');
+
+    // Match canvas dimensions
+    overlay.width = dimensions.width;
+    overlay.height = dimensions.height;
+
+    // Clear overlay
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+    // Draw semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
 
     // Top overlay
-    context.fillRect(0, 0, canvas.width, cropArea.top);
+    ctx.fillRect(0, 0, overlay.width, cropArea.top);
     // Bottom overlay
-    context.fillRect(0, canvas.height - cropArea.bottom, canvas.width, cropArea.bottom);
+    ctx.fillRect(0, overlay.height - cropArea.bottom, overlay.width, cropArea.bottom);
     // Left overlay
-    context.fillRect(0, cropArea.top, cropArea.left, canvas.height - cropArea.top - cropArea.bottom);
+    ctx.fillRect(0, cropArea.top, cropArea.left, overlay.height - cropArea.top - cropArea.bottom);
     // Right overlay
-    context.fillRect(canvas.width - cropArea.right, cropArea.top, cropArea.right, canvas.height - cropArea.top - cropArea.bottom);
+    ctx.fillRect(overlay.width - cropArea.right, cropArea.top, cropArea.right, overlay.height - cropArea.top - cropArea.bottom);
 
-    // Draw crop lines - thinner line
-    context.strokeStyle = '#a855f7';
-    context.lineWidth = 0.5;
-    context.setLineDash([4, 4]);
-    context.strokeRect(
+    // Draw crop lines
+    ctx.strokeStyle = '#a855f7';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(
       cropArea.left,
       cropArea.top,
-      canvas.width - cropArea.left - cropArea.right,
-      canvas.height - cropArea.top - cropArea.bottom
+      overlay.width - cropArea.left - cropArea.right,
+      overlay.height - cropArea.top - cropArea.bottom
     );
   };
 
@@ -288,41 +377,55 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
   const handleMouseMove = (e) => {
     if (!dragging || !canvasRef.current) return;
 
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    // Cancel previous animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
 
-    // Convert screen coordinates to canvas coordinates
-    const scaleX = dimensions.width / rect.width;
-    const scaleY = dimensions.height / rect.height;
-    const canvasX = x * scaleX;
-    const canvasY = y * scaleY;
+    // Schedule update on next frame for smooth 60fps updates
+    animationFrameRef.current = requestAnimationFrame(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-    setCropArea(prev => {
-      const newArea = { ...prev };
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
 
-      switch (dragging) {
-        case 'top':
-          newArea.top = Math.max(0, Math.min(canvasY, dimensions.height - prev.bottom - 50));
-          break;
-        case 'bottom':
-          newArea.bottom = Math.max(0, Math.min(dimensions.height - canvasY, dimensions.height - prev.top - 50));
-          break;
-        case 'left':
-          newArea.left = Math.max(0, Math.min(canvasX, dimensions.width - prev.right - 50));
-          break;
-        case 'right':
-          newArea.right = Math.max(0, Math.min(dimensions.width - canvasX, dimensions.width - prev.left - 50));
-          break;
-      }
+      // Convert screen coordinates to canvas coordinates
+      const scaleX = dimensions.width / rect.width;
+      const scaleY = dimensions.height / rect.height;
+      const canvasX = x * scaleX;
+      const canvasY = y * scaleY;
 
-      return newArea;
+      setCropArea(prev => {
+        const newArea = { ...prev };
+
+        switch (dragging) {
+          case 'top':
+            newArea.top = Math.max(0, Math.min(canvasY, dimensions.height - prev.bottom - 50));
+            break;
+          case 'bottom':
+            newArea.bottom = Math.max(0, Math.min(dimensions.height - canvasY, dimensions.height - prev.top - 50));
+            break;
+          case 'left':
+            newArea.left = Math.max(0, Math.min(canvasX, dimensions.width - prev.right - 50));
+            break;
+          case 'right':
+            newArea.right = Math.max(0, Math.min(dimensions.width - canvasX, dimensions.width - prev.left - 50));
+            break;
+        }
+
+        return newArea;
+      });
     });
   };
 
   const handleMouseUp = () => {
     setDragging(null);
+    // Clean up animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
   };
 
   const handleApply = () => {
@@ -413,7 +516,15 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
                 </div>
               ) : (
                 <div className="relative inline-block m-4">
+                  {/* PDF Canvas - rendered once */}
                   <canvas ref={canvasRef} className="border-2 border-gray-300 rounded shadow-lg" />
+
+                  {/* Overlay Canvas - redrawn on crop changes for smooth performance */}
+                  <canvas
+                    ref={overlayRef}
+                    className="absolute top-0 left-0 pointer-events-none border-2 border-transparent"
+                    style={{ width: '100%', height: '100%' }}
+                  />
 
                   {/* Crop Handles - Positioned relative to canvas display size */}
                   {dimensions.width > 0 && canvasRef.current && (
@@ -426,38 +537,38 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
 
                         return (
                           <>
-                            {/* Top Handle - Invisible but draggable */}
+                            {/* Top Handle - Centered on crop line */}
                             <div
                               className="absolute left-0 right-0 h-8 cursor-ns-resize"
                               style={{
-                                top: `${Math.max(0, cropArea.top * displayScaleY - 4)}px`,
+                                top: `${cropArea.top * displayScaleY - 16}px`,
                               }}
                               onMouseDown={(e) => handleMouseDown(e, 'top')}
                             />
 
-                            {/* Bottom Handle - Invisible but draggable */}
+                            {/* Bottom Handle - Centered on crop line */}
                             <div
                               className="absolute left-0 right-0 h-8 cursor-ns-resize"
                               style={{
-                                top: `${rect.height - cropArea.bottom * displayScaleY - 4}px`,
+                                top: `${rect.height - cropArea.bottom * displayScaleY - 16}px`,
                               }}
                               onMouseDown={(e) => handleMouseDown(e, 'bottom')}
                             />
 
-                            {/* Left Handle - Invisible but draggable */}
+                            {/* Left Handle - Centered on crop line */}
                             <div
                               className="absolute top-0 bottom-0 w-8 cursor-ew-resize"
                               style={{
-                                left: `${Math.max(0, cropArea.left * displayScaleX - 4)}px`,
+                                left: `${cropArea.left * displayScaleX - 16}px`,
                               }}
                               onMouseDown={(e) => handleMouseDown(e, 'left')}
                             />
 
-                            {/* Right Handle - Invisible but draggable */}
+                            {/* Right Handle - Centered on crop line */}
                             <div
                               className="absolute top-0 bottom-0 w-8 cursor-ew-resize"
                               style={{
-                                left: `${rect.width - cropArea.right * displayScaleX - 4}px`,
+                                left: `${rect.width - cropArea.right * displayScaleX - 16}px`,
                               }}
                               onMouseDown={(e) => handleMouseDown(e, 'right')}
                             />
@@ -1396,12 +1507,17 @@ export function AddPageNumbersEditor({ file, onApply, onCancel, darkMode }) {
 export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [watermarkType, setWatermarkType] = useState('text'); // 'text' or 'image'
   const [text, setText] = useState('CONFIDENTIAL');
   const [opacity, setOpacity] = useState(0.3);
   const [fontSize, setFontSize] = useState(48);
   const [rotation, setRotation] = useState(45);
   const [color, setColor] = useState('#FF0000');
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
+  const [logoSize, setLogoSize] = useState(100); // Logo size in points
   const canvasRef = useRef(null);
+  const logoInputRef = useRef(null);
 
   useEffect(() => {
     loadPDF();
@@ -1411,7 +1527,23 @@ export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
     if (pages.length > 0) {
       renderPreview();
     }
-  }, [pages, text, opacity, fontSize, rotation, color]);
+  }, [pages, watermarkType, text, opacity, fontSize, rotation, color, logoPreview, logoSize]);
+
+  const handleLogoUpload = (e) => {
+    const selectedFile = e.target.files[0];
+    if (selectedFile && selectedFile.type.startsWith('image/')) {
+      setLogoFile(selectedFile);
+
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setLogoPreview(event.target.result);
+      };
+      reader.readAsDataURL(selectedFile);
+    } else {
+      alert('Please select a valid image file (PNG, JPG, etc.)');
+    }
+  };
 
   const loadPDF = async () => {
     try {
@@ -1460,21 +1592,47 @@ export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
     context.globalAlpha = opacity;
     context.translate(canvas.width / 2, canvas.height / 2);
     context.rotate((rotation * Math.PI) / 180);
-    context.font = `bold ${fontSize * scale}px Arial`;
-    context.fillStyle = color;
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-    context.fillText(text, 0, 0);
+
+    if (watermarkType === 'text') {
+      // Draw text watermark
+      context.font = `bold ${fontSize * scale}px Arial`;
+      context.fillStyle = color;
+      context.textAlign = 'center';
+      context.textBaseline = 'middle';
+      context.fillText(text, 0, 0);
+    } else if (watermarkType === 'image' && logoPreview) {
+      // Draw image watermark
+      const img = new Image();
+      img.src = logoPreview;
+      await new Promise((resolve) => {
+        img.onload = () => {
+          const scaledLogoSize = logoSize * scale;
+          context.drawImage(
+            img,
+            -scaledLogoSize / 2,
+            -scaledLogoSize / 2,
+            scaledLogoSize,
+            scaledLogoSize
+          );
+          resolve();
+        };
+      });
+    }
+
     context.restore();
   };
 
   const handleApply = () => {
     onApply({
+      watermarkType,
       text,
       opacity,
       fontSize,
       rotation,
-      color
+      color,
+      logoFile,
+      logoPreview,
+      logoSize
     });
   };
 
@@ -1511,23 +1669,148 @@ export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
 
               {/* Settings */}
               <div className="space-y-4">
+                {/* Watermark Type Selector */}
                 <div>
                   <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                    Watermark Text
+                    Watermark Type
                   </label>
-                  <input
-                    type="text"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                    placeholder="Enter watermark text"
-                    className={`w-full px-4 py-2 rounded-lg border-2 ${
-                      darkMode
-                        ? 'bg-gray-700 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    } focus:border-purple-500 focus:outline-none`}
-                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setWatermarkType('text')}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                        watermarkType === 'text'
+                          ? 'bg-purple-500 text-white'
+                          : darkMode
+                          ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Text
+                    </button>
+                    <button
+                      onClick={() => setWatermarkType('image')}
+                      className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                        watermarkType === 'image'
+                          ? 'bg-purple-500 text-white'
+                          : darkMode
+                          ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      Logo/Image
+                    </button>
+                  </div>
                 </div>
 
+                {/* Text Watermark Settings */}
+                {watermarkType === 'text' && (
+                  <>
+                    <div>
+                      <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                        Watermark Text
+                      </label>
+                      <input
+                        type="text"
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        placeholder="Enter watermark text"
+                        className={`w-full px-4 py-2 rounded-lg border-2 ${
+                          darkMode
+                            ? 'bg-gray-700 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        } focus:border-purple-500 focus:outline-none`}
+                      />
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                        Font Size: {fontSize}pt
+                      </label>
+                      <input
+                        type="range"
+                        min="24"
+                        max="96"
+                        value={fontSize}
+                        onChange={(e) => setFontSize(parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                        Color
+                      </label>
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="color"
+                          value={color}
+                          onChange={(e) => setColor(e.target.value)}
+                          className="w-16 h-10 rounded cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={color}
+                          onChange={(e) => setColor(e.target.value)}
+                          className={`flex-1 px-4 py-2 rounded-lg border-2 ${
+                            darkMode
+                              ? 'bg-gray-700 border-gray-600 text-white'
+                              : 'bg-white border-gray-300 text-gray-900'
+                          } focus:border-purple-500 focus:outline-none`}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Logo Watermark Settings */}
+                {watermarkType === 'image' && (
+                  <>
+                    <div>
+                      <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                        Upload Company Logo
+                      </label>
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => logoInputRef.current?.click()}
+                        className={`w-full px-4 py-3 rounded-lg border-2 border-dashed ${
+                          darkMode
+                            ? 'border-gray-600 bg-gray-700 hover:bg-gray-600'
+                            : 'border-gray-300 bg-white hover:bg-gray-50'
+                        } transition-colors flex items-center justify-center space-x-2`}
+                      >
+                        <Upload className="w-5 h-5" />
+                        <span>{logoFile ? logoFile.name : 'Click to upload logo'}</span>
+                      </button>
+                      {logoPreview && (
+                        <div className="mt-2 flex justify-center">
+                          <img src={logoPreview} alt="Logo preview" className="max-w-[100px] max-h-[100px] rounded border-2 border-purple-500" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                        Logo Size: {logoSize}pt
+                      </label>
+                      <input
+                        type="range"
+                        min="50"
+                        max="300"
+                        value={logoSize}
+                        onChange={(e) => setLogoSize(parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Common Settings (apply to both text and image) */}
                 <div>
                   <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
                     Opacity: {Math.round(opacity * 100)}%
@@ -1539,20 +1822,6 @@ export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
                     step="0.1"
                     value={opacity}
                     onChange={(e) => setOpacity(parseFloat(e.target.value))}
-                    className="w-full"
-                  />
-                </div>
-
-                <div>
-                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                    Font Size: {fontSize}pt
-                  </label>
-                  <input
-                    type="range"
-                    min="24"
-                    max="96"
-                    value={fontSize}
-                    onChange={(e) => setFontSize(parseInt(e.target.value))}
                     className="w-full"
                   />
                 </div>
@@ -1571,31 +1840,9 @@ export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
                   />
                 </div>
 
-                <div>
-                  <label className={`block text-sm font-semibold mb-2 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-                    Color
-                  </label>
-                  <div className="flex items-center space-x-3">
-                    <input
-                      type="color"
-                      value={color}
-                      onChange={(e) => setColor(e.target.value)}
-                      className="w-16 h-10 rounded cursor-pointer"
-                    />
-                    <input
-                      type="text"
-                      value={color}
-                      onChange={(e) => setColor(e.target.value)}
-                      className={`flex-1 px-4 py-2 rounded-lg border-2 ${
-                        darkMode
-                          ? 'bg-gray-700 border-gray-600 text-white'
-                          : 'bg-white border-gray-300 text-gray-900'
-                      } focus:border-purple-500 focus:outline-none`}
-                    />
-                  </div>
-                </div>
-
-                <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                {/* Quick presets for text watermarks */}
+                {watermarkType === 'text' && (
+                  <div className={`p-4 rounded-lg ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                   <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                     Quick presets:
                   </p>
@@ -1620,6 +1867,7 @@ export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             </div>
           )}

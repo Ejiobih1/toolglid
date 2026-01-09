@@ -1,8 +1,8 @@
 import { PDFDocument, degrees, StandardFonts, rgb } from 'pdf-lib';
 import jsPDF from 'jspdf';
 
-// API URL configuration
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// SERVERLESS - No backend API needed
+// All PDF operations now run 100% client-side in the browser
 
 // Merge multiple PDFs into one
 export async function mergePDFs(files) {
@@ -188,139 +188,52 @@ export async function jpgToPDF(files) {
   }
 }
 
-// Convert PDF to Word - Creating real DOCX using JSZip
+// Convert PDF to Word - Using server-side ConvertAPI for high-quality conversion (Premium Only)
 export async function pdfToWord(file) {
   try {
-    console.log('Starting PDF to Word conversion...');
+    console.log('Starting PDF to Word conversion (Premium Feature)...');
 
-    // Check for JSZip library
-    if (!window.JSZip) {
-      throw new Error('JSZip library not loaded. Please refresh the page.');
+    // Import supabase client
+    const { supabase, SUPABASE_URL } = await import('./lib/supabase.js');
+
+    // Get current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !session) {
+      throw new Error('Please log in to use PDF to Word conversion');
     }
 
-    // Load PDF with PDF.js
-    const pdfjsLib = window['pdfjs-dist/build/pdf'];
-    if (!pdfjsLib) {
-      throw new Error('PDF.js library not loaded. Please refresh the page.');
-    }
+    console.log('Uploading PDF to conversion API...');
 
-    // Configure PDF.js worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    // Create form data
+    const formData = new FormData();
+    formData.append('file', file);
 
-    // Load the PDF file
-    const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdfDocument = await loadingTask.promise;
+    // Call the edge function
+    const functionUrl = `${SUPABASE_URL}/functions/v1/pdf-to-word`;
 
-    console.log(`PDF loaded successfully. Total pages: ${pdfDocument.numPages}`);
-
-    // Extract text from all pages and build paragraphs
-    let paragraphsXml = '';
-
-    for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber++) {
-      console.log(`Processing page ${pageNumber}/${pdfDocument.numPages}...`);
-
-      const page = await pdfDocument.getPage(pageNumber);
-      const textContent = await page.getTextContent();
-
-      // Add page heading
-      paragraphsXml += `
-        <w:p>
-          <w:pPr><w:pStyle w:val="Heading2"/></w:pPr>
-          <w:r>
-            <w:rPr><w:b/></w:rPr>
-            <w:t>Page ${pageNumber}</w:t>
-          </w:r>
-        </w:p>`;
-
-      // Extract and organize text items by vertical position
-      const textItems = textContent.items;
-      const lineMap = new Map();
-
-      textItems.forEach(item => {
-        const yPosition = Math.round(item.transform[5]);
-        const text = item.str;
-
-        if (!lineMap.has(yPosition)) {
-          lineMap.set(yPosition, []);
-        }
-        lineMap.get(yPosition).push(text);
-      });
-
-      // Sort by Y position (top to bottom)
-      const sortedLines = Array.from(lineMap.entries())
-        .sort((a, b) => b[0] - a[0]);
-
-      // Add each line as a paragraph
-      sortedLines.forEach(([, texts]) => {
-        const lineText = texts.join(' ').trim();
-        if (lineText.length > 0) {
-          // Escape XML special characters
-          const escapedText = lineText
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&apos;');
-
-          paragraphsXml += `
-            <w:p>
-              <w:r>
-                <w:t xml:space="preserve">${escapedText}</w:t>
-              </w:r>
-            </w:p>`;
-        }
-      });
-
-      // Add spacing between pages
-      if (pageNumber < pdfDocument.numPages) {
-        paragraphsXml += '<w:p><w:r><w:t></w:t></w:r></w:p>';
-      }
-    }
-
-    console.log('Creating DOCX structure...');
-
-    // Create DOCX structure using JSZip
-    const zip = new window.JSZip();
-
-    // Add [Content_Types].xml
-    zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
-</Types>`);
-
-    // Add _rels/.rels
-    zip.folder('_rels').file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
-</Relationships>`);
-
-    // Add word/_rels/document.xml.rels
-    zip.folder('word').folder('_rels').file('document.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-</Relationships>`);
-
-    // Add word/document.xml
-    zip.folder('word').file('document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    ${paragraphsXml}
-    <w:sectPr>
-      <w:pgSz w:w="12240" w:h="15840"/>
-      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/>
-    </w:sectPr>
-  </w:body>
-</w:document>`);
-
-    console.log('Generating DOCX file...');
-
-    // Generate the DOCX file
-    const docxBlob = await zip.generateAsync({
-      type: 'blob',
-      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: formData,
     });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Conversion failed' }));
+
+      if (response.status === 403) {
+        throw new Error('Premium subscription required. PDF to Word conversion is a premium feature that preserves formatting, images, and tables - just like SmallPDF!');
+      }
+
+      throw new Error(errorData.error || 'Conversion failed');
+    }
+
+    console.log('Downloading converted Word document...');
+
+    // Get the blob response
+    const docxBlob = await response.blob();
 
     console.log('PDF to Word conversion completed successfully!');
 
@@ -328,7 +241,7 @@ export async function pdfToWord(file) {
 
   } catch (error) {
     console.error('PDF to Word conversion failed:', error);
-    throw new Error(`Conversion failed: ${error.message}`);
+    throw error;
   }
 }
 
@@ -544,23 +457,44 @@ export async function rotatePDF(file, rotation = 90) {
 }
 
 // Add custom watermark to PDF
-export async function protectPDF(file, watermarkText, style = '1') {
+export async function protectPDF(file, watermarkText, options = {}) {
   try {
+    // Extract options with defaults
+    const {
+      watermarkType = 'text',
+      opacity = 0.15,
+      fontSize = 80,
+      rotation = 45,
+      color = '#999999',
+      logoFile,
+      logoPreview,
+      logoSize = 100
+    } = options;
+
     const arrayBuffer = await file.arrayBuffer();
     const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-
     const pages = pdfDoc.getPages();
-    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const angle = 45; // Diagonal angle
 
-    pages.forEach(page => {
-      const { width, height } = page.getSize();
+    // Handle text watermark
+    if (watermarkType === 'text') {
+      const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-      if (style === '1') {
-        // Single large centered watermark
-        const fontSize = 80;
+      // Helper to convert hex color to RGB
+      const hexToRgb = (hex) => {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+          r: parseInt(result[1], 16) / 255,
+          g: parseInt(result[2], 16) / 255,
+          b: parseInt(result[3], 16) / 255
+        } : { r: 0.6, g: 0.6, b: 0.6 };
+      };
+
+      const colorRgb = hexToRgb(color);
+
+      pages.forEach(page => {
+        const { width, height } = page.getSize();
         const textWidth = font.widthOfTextAtSize(watermarkText, fontSize);
-        const radians = (angle * Math.PI) / 180;
+        const radians = (rotation * Math.PI) / 180;
         const centerX = width / 2 - (textWidth * Math.cos(radians)) / 2;
         const centerY = height / 2;
 
@@ -569,31 +503,47 @@ export async function protectPDF(file, watermarkText, style = '1') {
           y: centerY,
           size: fontSize,
           font: font,
-          color: rgb(0.6, 0.6, 0.6),
-          opacity: 0.15,
-          rotate: degrees(angle),
+          color: rgb(colorRgb.r, colorRgb.g, colorRgb.b),
+          opacity: opacity,
+          rotate: degrees(rotation),
         });
-      } else {
-        // Multiple small tiled watermarks
-        const fontSize = 40;
-        const spacingX = 250;
-        const spacingY = 150;
+      });
+    }
+    // Handle image watermark
+    else if (watermarkType === 'image' && logoFile) {
+      // Read logo file as array buffer
+      const logoArrayBuffer = await logoFile.arrayBuffer();
 
-        for (let x = -width; x < width * 2; x += spacingX) {
-          for (let y = -height; y < height * 2; y += spacingY) {
-            page.drawText(watermarkText, {
-              x: x,
-              y: y,
-              size: fontSize,
-              font: font,
-              color: rgb(0.7, 0.7, 0.7),
-              opacity: 0.12,
-              rotate: degrees(angle),
-            });
-          }
-        }
+      // Determine image type and embed
+      let embeddedImage;
+      if (logoFile.type === 'image/png') {
+        embeddedImage = await pdfDoc.embedPng(logoArrayBuffer);
+      } else if (logoFile.type === 'image/jpeg' || logoFile.type === 'image/jpg') {
+        embeddedImage = await pdfDoc.embedJpg(logoArrayBuffer);
+      } else {
+        // Try PNG as default
+        embeddedImage = await pdfDoc.embedPng(logoArrayBuffer);
       }
-    });
+
+      const imageDims = embeddedImage.scale(1);
+
+      pages.forEach(page => {
+        const { width, height } = page.getSize();
+
+        // Calculate position (centered)
+        const x = width / 2 - logoSize / 2;
+        const y = height / 2 - logoSize / 2;
+
+        page.drawImage(embeddedImage, {
+          x,
+          y,
+          width: logoSize,
+          height: logoSize,
+          opacity: opacity,
+          rotate: degrees(rotation),
+        });
+      });
+    }
 
     // Add metadata
     pdfDoc.setTitle(`Watermarked: ${watermarkText}`);
@@ -607,53 +557,19 @@ export async function protectPDF(file, watermarkText, style = '1') {
   }
 }
 
-// Encrypt PDF with real password (using backend API)
-export async function encryptPDF(file, password) {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('password', password);
-
-    const response = await fetch(`${API_BASE_URL}/encrypt-pdf`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to encrypt PDF');
-    }
-
-    const encryptedBlob = await response.blob();
-    return encryptedBlob;
-  } catch (error) {
-    throw new Error(`Failed to encrypt PDF: ${error.message}`);
-  }
-}
-
-// Remove PDF password protection (using backend API)
-export async function unlockPDF(file, password) {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('password', password || '');
-
-    const response = await fetch(`${API_BASE_URL}/decrypt-pdf`, {
-      method: 'POST',
-      body: formData
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to decrypt PDF');
-    }
-
-    const decryptedBlob = await response.blob();
-    return decryptedBlob;
-  } catch (error) {
-    throw new Error(`Failed to unlock PDF: ${error.message}`);
-  }
-}
+// DEPRECATED - Encrypt/Decrypt PDF removed (required backend server)
+// These features have been disabled to achieve 100% serverless architecture
+//
+// NOTE: Browser-based PDF libraries (pdf-lib) do not support AES password encryption
+// To re-enable these features, you would need to deploy a backend server
+//
+// export async function encryptPDF(file, password) {
+//   throw new Error('PDF encryption requires a backend server and has been disabled in the serverless version');
+// }
+//
+// export async function unlockPDF(file, password) {
+//   throw new Error('PDF decryption requires a backend server and has been disabled in the serverless version');
+// }
 
 // Helper function to read file as Data URL
 function readFileAsDataURL(file) {
