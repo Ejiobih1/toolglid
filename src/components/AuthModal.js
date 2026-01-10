@@ -189,18 +189,7 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
         }, 1000);
 
       } else if (mode === 'register') {
-        // First check if user already exists
-        const { data: existingUsers } = await supabase
-          .from('users')
-          .select('email')
-          .eq('email', email)
-          .limit(1);
-
-        if (existingUsers && existingUsers.length > 0) {
-          throw new Error('This email is already registered. Please login instead.');
-        }
-
-        // Sign up with Supabase
+        // Sign up with Supabase (it will handle duplicate detection)
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
@@ -231,7 +220,8 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
         if (data.user) {
           // Check if user identity already exists (indicates duplicate)
           if (data.user.identities && data.user.identities.length === 0) {
-            throw new Error('This email is already registered. Please login instead.');
+            // User exists but identities is empty - this is a duplicate
+            throw new Error('This email is already registered but may need verification. Please try logging in or contact support if you cannot access your account.');
           }
 
           // Check if email confirmation is required
