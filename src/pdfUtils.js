@@ -262,10 +262,21 @@ export async function wordToPDF(file) {
     // Handle .docx files (modern Word format)
     if (fileName.endsWith('.docx')) {
       try {
-        console.log('Converting .docx file to PDF...');
+        console.log('Converting .docx file to PDF with formatting...');
 
-        // Convert to HTML first to preserve some formatting
-        const result = await mammoth.convertToHtml({ arrayBuffer });
+        // Convert to HTML with embedded images to preserve all formatting
+        const result = await mammoth.convertToHtml({
+          arrayBuffer,
+          convertImage: mammoth.images.imgElement(function(image) {
+            // Convert images to base64 data URLs to embed in HTML
+            return image.read("base64").then(function(imageBuffer) {
+              return {
+                src: "data:" + image.contentType + ";base64," + imageBuffer
+              };
+            });
+          })
+        });
+
         const html = result.value;
 
         // Log any messages from mammoth
@@ -278,57 +289,10 @@ export async function wordToPDF(file) {
           throw new Error('No content could be extracted from the Word document. The file may be empty or corrupted.');
         }
 
-        // Extract text with basic formatting preserved
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = html;
+        console.log('Successfully converted Word to HTML, rendering to PDF...');
 
-        // Process HTML to extract structured text
-        const processNode = (node) => {
-          let text = '';
-
-          if (node.nodeType === Node.TEXT_NODE) {
-            return node.textContent;
-          }
-
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const tagName = node.tagName.toLowerCase();
-
-            // Handle headings
-            if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tagName)) {
-              text += '\n\n### ' + node.textContent + ' ###\n\n';
-            }
-            // Handle paragraphs
-            else if (tagName === 'p') {
-              text += '\n' + node.textContent + '\n';
-            }
-            // Handle lists
-            else if (tagName === 'li') {
-              text += '\n• ' + node.textContent;
-            }
-            // Handle line breaks
-            else if (tagName === 'br') {
-              text += '\n';
-            }
-            // Handle other elements
-            else {
-              for (let child of node.childNodes) {
-                text += processNode(child);
-              }
-            }
-          }
-
-          return text;
-        };
-
-        const text = processNode(tempDiv);
-
-        // Check if we extracted any text
-        if (!text || text.trim().length === 0) {
-          throw new Error('No text could be extracted from the Word document. The document may be empty or contain only images.');
-        }
-
-        console.log('Successfully converted Word to text, creating PDF...');
-        return createPDFFromText(text, file.name);
+        // Create PDF from HTML with full formatting preservation
+        return createPDFFromHTML(html, file.name);
 
       } catch (docxError) {
         console.error('.docx conversion error:', docxError);
@@ -360,6 +324,77 @@ export async function wordToPDF(file) {
     console.error('Word to PDF conversion error:', error);
     throw new Error(`Failed to convert to PDF: ${error.message}`);
   }
+}
+
+// Helper function to create PDF from HTML with full formatting preservation
+async function createPDFFromHTML(html, originalFilename = 'document') {
+  return new Promise((resolve, reject) => {
+    try {
+      // Create a styled HTML document
+      const styledHTML = `
+        <div style="
+          font-family: 'Times New Roman', Times, serif;
+          font-size: 12pt;
+          line-height: 1.5;
+          color: #000000;
+          padding: 20px;
+          max-width: 210mm;
+        ">
+          ${html}
+        </div>
+      `;
+
+      // Create temporary container
+      const container = document.createElement('div');
+      container.innerHTML = styledHTML;
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      document.body.appendChild(container);
+
+      // Create jsPDF instance
+      const pdfDoc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
+
+      // Set metadata
+      pdfDoc.setProperties({
+        title: originalFilename.replace(/\.(docx?|txt)$/i, ''),
+        author: 'ToolGlid',
+        creator: 'ToolGlid - Word to PDF Converter'
+      });
+
+      // Convert HTML to PDF using jsPDF's html method
+      pdfDoc.html(container, {
+        callback: function(doc) {
+          // Clean up temporary container
+          document.body.removeChild(container);
+
+          // Generate blob
+          const pdfBlob = doc.output('blob');
+          resolve(pdfBlob);
+        },
+        x: 15,
+        y: 15,
+        width: 180, // A4 width minus margins
+        windowWidth: 800, // Virtual window width for rendering
+        margin: [15, 15, 15, 15],
+        autoPaging: 'text',
+        html2canvas: {
+          scale: 0.5, // Adjust for better quality vs file size
+          useCORS: true,
+          logging: false,
+          letterRendering: true
+        }
+      });
+
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 // Helper function to create PDF from text with better formatting
