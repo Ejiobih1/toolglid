@@ -224,6 +224,132 @@ export default function PDFToolsApp() {
     handleCheckoutSuccess();
   }, [user, refreshUser]); // Run when user changes
 
+  // Detect Paystack payment callback and verify payment
+  useEffect(() => {
+    const handlePaystackCallback = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isPaymentCallback = urlParams.get('payment') === 'callback';
+      const reference = urlParams.get('reference');
+
+      if (isPaymentCallback && reference) {
+        console.log('Detected Paystack payment callback, verifying payment...');
+
+        try {
+          // Get stored user info
+          const storedUserId = localStorage.getItem('paystack_pending_user_id');
+          const storedReference = localStorage.getItem('paystack_pending_reference');
+
+          if (reference !== storedReference) {
+            console.warn('Reference mismatch - possible security issue');
+            return;
+          }
+
+          // Show loading state
+          setProcessing(true);
+          setError(null);
+
+          // Get the session token
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+          if (sessionError || !session) {
+            throw new Error('Authentication error. Please sign in again.');
+          }
+
+          // Call Edge Function to verify payment and update user
+          const { data: verifyData, error: verifyError } = await supabase.functions.invoke(
+            'paystack-verify',
+            {
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: {
+                reference: reference,
+                userId: storedUserId || user?.id,
+              },
+            }
+          );
+
+          if (verifyError) {
+            throw new Error(`Verification failed: ${verifyError.message}`);
+          }
+
+          if (verifyData && verifyData.success) {
+            // Payment verified successfully
+            console.log('Payment verified successfully!');
+
+            // Clean up localStorage
+            localStorage.removeItem('paystack_pending_reference');
+            localStorage.removeItem('paystack_pending_user_id');
+
+            // Update premium status
+            await refreshUser();
+
+            // Poll for premium status (webhook might take a few seconds)
+            let attempts = 0;
+            const maxAttempts = 10;
+            const pollInterval = 2000; // 2 seconds
+
+            const checkPremiumStatus = async () => {
+              await refreshUser();
+
+              const { data } = await supabase
+                .from('users')
+                .select('is_premium')
+                .eq('id', user?.id || storedUserId)
+                .single();
+
+              if (data?.is_premium) {
+                console.log('Premium subscription activated!');
+                setIsPremium(true);
+                setIsUnlocked(true);
+
+                // Clean up URL and show success
+                window.history.replaceState({}, document.title, window.location.pathname);
+                alert('🎉 Welcome to Premium! Your subscription is now active.');
+                setProcessing(false);
+                return true;
+              }
+              return false;
+            };
+
+            // Initial check
+            const foundPremium = await checkPremiumStatus();
+
+            // If not premium yet, poll for it
+            if (!foundPremium) {
+              const pollTimer = setInterval(async () => {
+                attempts++;
+                const found = await checkPremiumStatus();
+
+                if (found || attempts >= maxAttempts) {
+                  clearInterval(pollTimer);
+                  setProcessing(false);
+                  if (!found) {
+                    console.log('Premium status not updated yet. Please refresh in a moment.');
+                    alert('Payment received! Your premium status will be activated shortly. Please refresh the page in a few moments.');
+                  }
+                }
+              }, pollInterval);
+            }
+
+          } else {
+            throw new Error('Payment verification failed. Please contact support.');
+          }
+
+        } catch (error) {
+          console.error('Paystack verification error:', error);
+          setError(`Payment verification failed: ${error.message}. Please contact support with reference: ${reference}`);
+          setProcessing(false);
+
+          // Clean up URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    };
+
+    handlePaystackCallback();
+  }, [user, refreshUser]);
+
   // Add keyboard shortcut for reset (Ctrl+Shift+R)
   useEffect(() => {
     const handleKeyPress = (e) => {

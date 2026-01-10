@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 const PremiumCheckout = ({ darkMode }) => {
@@ -11,35 +10,15 @@ const PremiumCheckout = ({ darkMode }) => {
   // Paystack configuration from environment variables
   const PAYSTACK_PUBLIC_KEY = process.env.REACT_APP_PAYSTACK_PUBLIC_KEY;
   const PAYSTACK_PLAN_CODE = process.env.REACT_APP_PAYSTACK_PLAN_CODE;
-  const PAYSTACK_AMOUNT = process.env.REACT_APP_PAYSTACK_AMOUNT || 799; // $7.99 in cents
-  const PAYSTACK_CURRENCY = process.env.REACT_APP_PAYSTACK_CURRENCY || 'USD';
+  const PAYSTACK_AMOUNT = process.env.REACT_APP_PAYSTACK_AMOUNT || 1500000; // ₦15,000 in kobo (smallest currency unit)
+  const PAYSTACK_CURRENCY = process.env.REACT_APP_PAYSTACK_CURRENCY || 'NGN';
 
-  // Load Paystack Inline JS script
+  // Check if Paystack public key is configured
   useEffect(() => {
-    // Check if script already exists
-    if (window.PaystackPop) {
+    if (PAYSTACK_PUBLIC_KEY && !PAYSTACK_PUBLIC_KEY.includes('your_public_key_here')) {
       setPaystackLoaded(true);
-      return;
     }
-
-    // Create and load script
-    const script = document.createElement('script');
-    script.src = 'https://js.paystack.co/v1/inline.js';
-    script.async = true;
-    script.onload = () => setPaystackLoaded(true);
-    script.onerror = () => {
-      console.error('Failed to load Paystack script');
-      setError('Failed to load payment system. Please refresh the page.');
-    };
-    document.body.appendChild(script);
-
-    return () => {
-      // Cleanup script on unmount
-      if (script.parentNode) {
-        script.parentNode.removeChild(script);
-      }
-    };
-  }, []);
+  }, [PAYSTACK_PUBLIC_KEY]);
 
   const handleCheckout = async () => {
     if (!user) {
@@ -54,8 +33,8 @@ const PremiumCheckout = ({ darkMode }) => {
       return;
     }
 
-    if (!paystackLoaded || !window.PaystackPop) {
-      setError('Payment system is still loading. Please try again in a moment.');
+    if (!paystackLoaded) {
+      setError('Payment system is not ready. Please try again.');
       return;
     }
 
@@ -66,83 +45,56 @@ const PremiumCheckout = ({ darkMode }) => {
       // Get user email
       const userEmail = user.email;
 
-      // Initialize Paystack payment
-      const handler = window.PaystackPop.setup({
+      // Generate unique reference
+      const reference = `${Date.now()}-${user.id}`;
+
+      // Callback URL after payment (Paystack will redirect here)
+      const callbackUrl = `${window.location.origin}/?payment=callback&reference=${reference}`;
+
+      // Build Paystack Standard checkout URL (redirect mode)
+      const paystackUrl = new URL('https://checkout.paystack.com/');
+
+      // Add payment parameters
+      const params = {
         key: PAYSTACK_PUBLIC_KEY,
         email: userEmail,
-        amount: PAYSTACK_AMOUNT, // Amount in cents (smallest currency unit)
-        currency: PAYSTACK_CURRENCY, // USD by default, supports NGN, GHS, ZAR, KES
-        plan: PAYSTACK_PLAN_CODE, // Subscription plan code
-        ref: `${Date.now()}-${user.id}`, // Unique transaction reference
-        metadata: {
-          custom_fields: [
-            {
-              display_name: 'User ID',
-              variable_name: 'user_id',
-              value: user.id,
-            },
-            {
-              display_name: 'Email',
-              variable_name: 'email',
-              value: userEmail,
-            },
-          ],
-        },
-        onClose: function() {
-          // User closed the payment modal
-          setLoading(false);
-          console.log('Payment window closed');
-        },
-        callback: function(response) {
-          // Payment successful - verify on backend
-          console.log('Payment successful:', response);
+        amount: PAYSTACK_AMOUNT, // Amount in kobo (smallest currency unit)
+        currency: PAYSTACK_CURRENCY,
+        ref: reference,
+        callback_url: callbackUrl,
+        // Metadata for tracking
+        metadata: JSON.stringify({
+          user_id: user.id,
+          email: userEmail,
+          plan_code: PAYSTACK_PLAN_CODE,
+        })
+      };
 
-          // Handle async verification in a separate function
-          (async () => {
-            try {
-              // Get the session token
-              const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      // Add plan code if available
+      if (PAYSTACK_PLAN_CODE) {
+        params.plan = PAYSTACK_PLAN_CODE;
+      }
 
-              if (sessionError || !session) {
-                throw new Error('Authentication error. Please sign in again.');
-              }
-
-              // Call Edge Function to verify payment and update user
-              const { data: verifyData, error: verifyError } = await supabase.functions.invoke(
-                'paystack-verify',
-                {
-                  headers: {
-                    Authorization: `Bearer ${session.access_token}`,
-                  },
-                  body: {
-                    reference: response.reference,
-                    userId: user.id,
-                  },
-                }
-              );
-
-              if (verifyError) {
-                throw new Error(`Verification failed: ${verifyError.message}`);
-              }
-
-              if (verifyData && verifyData.success) {
-                // Payment verified successfully
-                alert('🎉 Welcome to Premium! Your subscription is now active.');
-                window.location.href = `${window.location.origin}/?checkout=success`;
-              } else {
-                throw new Error('Payment verification failed. Please contact support.');
-              }
-            } catch (err) {
-              console.error('Verification error:', err);
-              setError(err.message || 'Failed to verify payment. Please contact support with your payment reference.');
-              setLoading(false);
-            }
-          })();
-        },
+      // Build URL with parameters
+      Object.keys(params).forEach(key => {
+        paystackUrl.searchParams.append(key, params[key]);
       });
 
-      // Open Paystack payment popup
-      handler.openIframe();
+      // Store reference in localStorage for verification on return
+      localStorage.setItem('paystack_pending_reference', reference);
+      localStorage.setItem('paystack_pending_user_id', user.id);
+
+      console.log('Redirecting to Paystack checkout:', paystackUrl.toString());
+
+      // Open Paystack checkout in new tab
+      const checkoutWindow = window.open(paystackUrl.toString(), '_blank');
+
+      if (!checkoutWindow) {
+        throw new Error('Please allow popups to complete payment. Click the button again after allowing popups.');
+      }
+
+      setLoading(false);
+
     } catch (err) {
       console.error('Checkout error:', err);
       setError(err.message || 'Failed to initialize payment. Please try again.');
@@ -194,7 +146,7 @@ const PremiumCheckout = ({ darkMode }) => {
         ) : !user ? (
           'Sign In to Subscribe'
         ) : (
-          'Subscribe Now - $7.99/month'
+          'Subscribe Now - ₦15,000/month'
         )}
       </button>
 
