@@ -84,10 +84,13 @@ serve(async (req) => {
 
     const paystackData = await paystackResponse.json()
 
-    console.log('Paystack response:', paystackData)
+    console.log('Paystack response status:', paystackResponse.status)
+    console.log('Paystack response data:', paystackData)
 
     if (!paystackResponse.ok || !paystackData.status) {
-      throw new Error(paystackData.message || 'Failed to initialize payment')
+      const errorMsg = paystackData.message || paystackData.error || 'Failed to initialize payment'
+      console.error('Paystack API error:', errorMsg)
+      throw new Error(errorMsg)
     }
 
     // Return the authorization URL to the frontend
@@ -106,6 +109,7 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Error initializing Paystack payment:', error)
+    // Return 200 with success: false so the client can handle the error
     return new Response(
       JSON.stringify({
         success: false,
@@ -113,7 +117,7 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
+        status: 200, // Changed from 400 to 200 for Supabase client compatibility
       }
     )
   }
