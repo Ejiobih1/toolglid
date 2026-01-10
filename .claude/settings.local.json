@@ -5,7 +5,11 @@
       "Bash(supabase link:*)",
       "Bash(cat:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(supabase --version:*)",
+      "Bash(npx supabase:*)",
+      "Bash(supabase functions deploy:*)"
     ],
     "deny": [],
     "ask": []

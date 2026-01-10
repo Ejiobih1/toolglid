@@ -407,42 +407,39 @@ export default function PDFToolsApp() {
   }, []);
 
   const tools = [
-    // ========== LAUNCH VERSION - TESTED TOOLS ONLY ==========
+    // ========== COMPLETE PDF TOOLKIT - 21 TOOLS ==========
 
-    // Core Tools (TESTED & WORKING)
+    // Core Tools
     { id: 'merge', icon: FileText, name: 'Merge PDF', desc: 'Combine multiple PDFs into one document', accept: '.pdf', multiple: true },
     { id: 'split', icon: Scissors, name: 'Split PDF', desc: 'Extract pages or split into multiple files', accept: '.pdf', multiple: false },
     { id: 'compress', icon: Minimize2, name: 'Compress PDF', desc: 'Reduce file size while maintaining quality', accept: '.pdf', multiple: false },
 
-    // Conversion Tools (TESTED & WORKING)
+    // Conversion Tools
     { id: 'pdf-to-jpg', icon: Image, name: 'PDF to JPG', desc: 'Convert PDF pages to JPG images', accept: '.pdf', multiple: false },
     { id: 'pdf-to-png', icon: Image, name: 'PDF to PNG', desc: 'Convert PDF pages to PNG images', accept: '.pdf', multiple: false },
     { id: 'jpg-to-pdf', icon: FileImage, name: 'JPG to PDF', desc: 'Convert images to PDF documents', accept: 'image/*', multiple: true },
-    { id: 'pdf-to-word', icon: Type, name: 'PDF to Word', desc: 'Convert PDF to Word document (.docx)', accept: '.pdf', multiple: false },
-    // { id: 'word-to-pdf', icon: FileText, name: 'Word to PDF', desc: 'Convert Word documents to PDF (.docx format)', accept: '.docx,.txt', multiple: false }, // TODO: Test before enabling
+    { id: 'pdf-to-word', icon: Type, name: 'PDF to Word', desc: 'Convert PDF to editable Word document', accept: '.pdf', multiple: false },
+    { id: 'word-to-pdf', icon: FileText, name: 'Word to PDF', desc: 'Convert Word documents to PDF format', accept: '.docx,.doc,.txt', multiple: false },
 
-    // Page Management (TESTED & WORKING)
-    { id: 'organize-pages', icon: ArrowUpDown, name: 'Organize Pages', desc: 'Reorder, rearrange, or delete pages', accept: '.pdf', multiple: false },
-    { id: 'rotate', icon: RotateCw, name: 'Rotate PDF', desc: 'Rotate pages by custom angles', accept: '.pdf', multiple: false },
-    { id: 'extract-pages', icon: FileDown, name: 'Extract Pages', desc: 'Extract specific pages from PDF', accept: '.pdf', multiple: false },
+    // Page Management
+    { id: 'organize-pages', icon: ArrowUpDown, name: 'Organize Pages', desc: 'Reorder, rearrange, or delete pages visually', accept: '.pdf', multiple: false },
+    { id: 'rotate', icon: RotateCw, name: 'Rotate PDF', desc: 'Rotate pages by 90, 180, or 270 degrees', accept: '.pdf', multiple: false },
+    { id: 'extract-pages', icon: FileDown, name: 'Extract Pages', desc: 'Extract specific pages into new PDF', accept: '.pdf', multiple: false },
     { id: 'delete-pages', icon: Trash2, name: 'Delete Pages', desc: 'Remove unwanted pages from PDF', accept: '.pdf', multiple: false },
-    { id: 'crop', icon: Crop, name: 'Crop PDF', desc: 'Trim margins and resize pages', accept: '.pdf', multiple: false },
-    { id: 'protect', icon: Shield, name: 'Add Watermark', desc: 'Add custom watermark to prove ownership', accept: '.pdf', multiple: false },
+    { id: 'crop', icon: Crop, name: 'Crop PDF', desc: 'Trim margins and adjust page boundaries', accept: '.pdf', multiple: false },
+    { id: 'resize', icon: Maximize2, name: 'Resize PDF', desc: 'Change page size to A4, Letter, or custom', accept: '.pdf', multiple: false },
 
-    // ========== FEATURES TO ADD LATER (Post-Launch) ==========
-    // Uncomment and test these one by one after launch
-
-    // Editing Tools
-    // { id: 'add-page-numbers', icon: Hash, name: 'Add Page Numbers', desc: 'Number pages automatically', accept: '.pdf', multiple: false },
-    // { id: 'add-signature', icon: PenTool, name: 'Add Signature', desc: 'Sign documents with image signature', accept: '.pdf', multiple: false },
-    // { id: 'protect', icon: Shield, name: 'Add Watermark', desc: 'Add custom watermark to prove ownership', accept: '.pdf', multiple: false },
-    // { id: 'header-footer', icon: AlignCenter, name: 'Header & Footer', desc: 'Add headers and footers to pages', accept: '.pdf', multiple: false },
+    // Editing & Enhancement Tools
+    { id: 'protect', icon: Shield, name: 'Add Watermark', desc: 'Add text or image watermark for protection', accept: '.pdf', multiple: false },
+    { id: 'add-page-numbers', icon: Hash, name: 'Add Page Numbers', desc: 'Automatically number pages with custom style', accept: '.pdf', multiple: false },
+    { id: 'add-signature', icon: PenTool, name: 'Add Signature', desc: 'Sign documents with digital signature', accept: '.pdf', multiple: false },
+    { id: 'header-footer', icon: AlignCenter, name: 'Header & Footer', desc: 'Add custom headers and footers', accept: '.pdf', multiple: false },
 
     // Advanced Tools
-    // { id: 'extract-text', icon: Type, name: 'Extract Text', desc: 'Extract all text from PDF', accept: '.pdf', multiple: false },
-    // { id: 'extract-images', icon: Image, name: 'Extract Images', desc: 'Extract all images from PDF', accept: '.pdf', multiple: false },
-    // { id: 'edit-metadata', icon: FileEdit, name: 'Edit Metadata', desc: 'Edit PDF properties and info', accept: '.pdf', multiple: false },
-    // { id: 'flatten', icon: Layers, name: 'Flatten PDF', desc: 'Make form fields non-editable', accept: '.pdf', multiple: false },
+    { id: 'extract-text', icon: Type, name: 'Extract Text', desc: 'Extract all text content from PDF', accept: '.pdf', multiple: false },
+    { id: 'extract-images', icon: Image, name: 'Extract Images', desc: 'Extract all images from PDF pages', accept: '.pdf', multiple: false },
+    { id: 'edit-metadata', icon: FileEdit, name: 'Edit Metadata', desc: 'Edit PDF title, author, and properties', accept: '.pdf', multiple: false },
+    { id: 'flatten', icon: Layers, name: 'Flatten PDF', desc: 'Convert form fields to static content', accept: '.pdf', multiple: false },
   ];
 
   // Initialize access state from localStorage
@@ -1333,10 +1330,10 @@ export default function PDFToolsApp() {
           <h2 className={`text-4xl sm:text-5xl font-bold mb-4 ${
             darkMode ? 'text-white' : 'text-gray-900'
           }`}>
-            Professional PDF Tools
+            21+ Professional PDF Tools
           </h2>
           <p className={`text-lg sm:text-xl ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            Convert, compress, merge, and edit PDFs with ease
+            Convert, compress, merge, edit, sign, and protect PDFs - All in your browser
           </p>
         </div>
 
@@ -1426,7 +1423,7 @@ export default function PDFToolsApp() {
       <footer className={`mt-16 border-t ${darkMode ? 'border-purple-500/20' : 'border-purple-200'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <p className={`text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            PDF Tools Pro - Professional PDF manipulation in your browser
+            ToolGlid - 21+ Professional PDF Tools. Free, secure, and privacy-friendly.
           </p>
           {/* Reset buttons for testing */}
           <div className="flex justify-center gap-4 mt-4">
