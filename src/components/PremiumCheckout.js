@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 const PremiumCheckout = ({ darkMode }) => {
   const { user } = useAuth();
@@ -26,13 +27,6 @@ const PremiumCheckout = ({ darkMode }) => {
       return;
     }
 
-    // Validate Paystack configuration
-    if (!PAYSTACK_PUBLIC_KEY || PAYSTACK_PUBLIC_KEY.includes('your_public_key_here')) {
-      setError('Payment system is not configured. Please contact support.');
-      console.error('PAYSTACK_PUBLIC_KEY not set in environment variables');
-      return;
-    }
-
     if (!paystackLoaded) {
       setError('Payment system is not ready. Please try again.');
       return;
@@ -45,49 +39,48 @@ const PremiumCheckout = ({ darkMode }) => {
       // Get user email
       const userEmail = user.email;
 
-      // Generate unique reference
-      const reference = `${Date.now()}-${user.id}`;
-
       // Callback URL after payment (Paystack will redirect here)
-      const callbackUrl = `${window.location.origin}/?payment=callback&reference=${reference}`;
+      const callbackUrl = `${window.location.origin}/?payment=callback`;
 
-      // Build Paystack Standard checkout URL (redirect mode)
-      const paystackUrl = new URL('https://checkout.paystack.com/');
+      console.log('Initializing Paystack transaction...');
 
-      // Add payment parameters
-      const params = {
-        key: PAYSTACK_PUBLIC_KEY,
-        email: userEmail,
-        amount: PAYSTACK_AMOUNT, // Amount in kobo (smallest currency unit)
-        currency: PAYSTACK_CURRENCY,
-        ref: reference,
-        callback_url: callbackUrl,
-        // Metadata for tracking
-        metadata: JSON.stringify({
-          user_id: user.id,
-          email: userEmail,
-          plan_code: PAYSTACK_PLAN_CODE,
-        })
-      };
+      // Get the session token
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-      // Add plan code if available
-      if (PAYSTACK_PLAN_CODE) {
-        params.plan = PAYSTACK_PLAN_CODE;
+      if (sessionError || !session) {
+        throw new Error('Authentication error. Please sign in again.');
       }
 
-      // Build URL with parameters
-      Object.keys(params).forEach(key => {
-        paystackUrl.searchParams.append(key, params[key]);
-      });
+      // Call Edge Function to initialize Paystack transaction
+      const { data, error: initError } = await supabase.functions.invoke(
+        'paystack-initialize',
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: {
+            userId: user.id,
+            email: userEmail,
+            amount: PAYSTACK_AMOUNT, // Amount in kobo
+            currency: PAYSTACK_CURRENCY,
+            planCode: PAYSTACK_PLAN_CODE,
+            callbackUrl: callbackUrl,
+          },
+        }
+      );
+
+      if (initError || !data?.success) {
+        throw new Error(data?.error || initError?.message || 'Failed to initialize payment');
+      }
+
+      console.log('Paystack transaction initialized:', data);
 
       // Store reference in localStorage for verification on return
-      localStorage.setItem('paystack_pending_reference', reference);
+      localStorage.setItem('paystack_pending_reference', data.reference);
       localStorage.setItem('paystack_pending_user_id', user.id);
 
-      console.log('Redirecting to Paystack checkout:', paystackUrl.toString());
-
-      // Open Paystack checkout in new tab
-      const checkoutWindow = window.open(paystackUrl.toString(), '_blank');
+      // Redirect to Paystack's authorization URL in a new tab
+      const checkoutWindow = window.open(data.authorization_url, '_blank');
 
       if (!checkoutWindow) {
         throw new Error('Please allow popups to complete payment. Click the button again after allowing popups.');

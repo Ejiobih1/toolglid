@@ -229,7 +229,8 @@ export default function PDFToolsApp() {
     const handlePaystackCallback = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const isPaymentCallback = urlParams.get('payment') === 'callback';
-      const reference = urlParams.get('reference');
+      // Paystack returns the reference as 'trxref' in the callback URL
+      const reference = urlParams.get('trxref') || urlParams.get('reference');
 
       if (isPaymentCallback && reference) {
         console.log('Detected Paystack payment callback, verifying payment...');
