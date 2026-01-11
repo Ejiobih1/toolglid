@@ -245,156 +245,56 @@ export async function pdfToWord(file) {
   }
 }
 
-// Convert Word to PDF (with better formatting)
+// Convert Word to PDF using ConvertAPI (preserves all formatting)
 export async function wordToPDF(file) {
   try {
-    // Check if mammoth is loaded
-    const mammoth = window.mammoth;
-    if (!mammoth) {
-      throw new Error('Mammoth library not loaded. Please refresh the page and try again.');
+    console.log('Starting Word to PDF conversion...');
+
+    // Import supabase client
+    const { supabase, SUPABASE_URL } = await import('./lib/supabase.js');
+
+    // Get current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !session) {
+      throw new Error('Please log in to use Word to PDF conversion');
     }
 
-    const arrayBuffer = await file.arrayBuffer();
+    console.log('Uploading Word file to conversion API...');
 
-    // Check file type
-    const fileName = file.name.toLowerCase();
+    // Create form data
+    const formData = new FormData();
+    formData.append('file', file);
 
-    // Handle .docx files (modern Word format)
-    if (fileName.endsWith('.docx')) {
-      try {
-        console.log('Converting .docx file to PDF with formatting...');
+    // Call the edge function
+    const functionUrl = `${SUPABASE_URL}/functions/v1/word-to-pdf`;
 
-        // Convert to HTML with embedded images to preserve all formatting
-        const result = await mammoth.convertToHtml({
-          arrayBuffer,
-          convertImage: mammoth.images.imgElement(function(image) {
-            // Convert images to base64 data URLs to embed in HTML
-            return image.read("base64").then(function(imageBuffer) {
-              return {
-                src: "data:" + image.contentType + ";base64," + imageBuffer
-              };
-            });
-          })
-        });
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: formData,
+    });
 
-        const html = result.value;
-
-        // Log any messages from mammoth
-        if (result.messages && result.messages.length > 0) {
-          console.log('Mammoth conversion messages:', result.messages);
-        }
-
-        // Check if we got any content
-        if (!html || html.trim().length === 0) {
-          throw new Error('No content could be extracted from the Word document. The file may be empty or corrupted.');
-        }
-
-        console.log('Successfully converted Word to HTML, rendering to PDF...');
-
-        // Create PDF from HTML with full formatting preservation
-        return createPDFFromHTML(html, file.name);
-
-      } catch (docxError) {
-        console.error('.docx conversion error:', docxError);
-        throw new Error(`Failed to read .docx file: ${docxError.message}. Make sure the file is a valid Word document.`);
-      }
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Conversion failed' }));
+      throw new Error(errorData.error || 'Conversion failed');
     }
 
-    // Handle .doc files (old Word format)
-    else if (fileName.endsWith('.doc')) {
-      throw new Error('Old .doc format is not supported. Please save your document as .docx (modern Word format) and try again.');
-    }
+    console.log('Downloading converted PDF document...');
 
-    // Handle plain text files as fallback
-    else if (fileName.endsWith('.txt')) {
-      console.log('Converting plain text file to PDF...');
-      const text = await file.text();
-      if (!text || text.trim().length === 0) {
-        throw new Error('The text file is empty.');
-      }
-      return createPDFFromText(text, file.name);
-    }
+    // Get the blob response
+    const pdfBlob = await response.blob();
 
-    // Unsupported format
-    else {
-      throw new Error(`Unsupported file format: ${fileName}. Only .docx and .txt files are supported.`);
-    }
+    console.log('Word to PDF conversion completed successfully!');
+
+    return pdfBlob;
 
   } catch (error) {
-    console.error('Word to PDF conversion error:', error);
-    throw new Error(`Failed to convert to PDF: ${error.message}`);
+    console.error('Word to PDF conversion failed:', error);
+    throw error;
   }
-}
-
-// Helper function to create PDF from HTML with full formatting preservation
-async function createPDFFromHTML(html, originalFilename = 'document') {
-  return new Promise((resolve, reject) => {
-    try {
-      // Create a styled HTML document
-      const styledHTML = `
-        <div style="
-          font-family: 'Times New Roman', Times, serif;
-          font-size: 12pt;
-          line-height: 1.5;
-          color: #000000;
-          padding: 20px;
-          max-width: 210mm;
-        ">
-          ${html}
-        </div>
-      `;
-
-      // Create temporary container
-      const container = document.createElement('div');
-      container.innerHTML = styledHTML;
-      container.style.position = 'absolute';
-      container.style.left = '-9999px';
-      container.style.top = '0';
-      document.body.appendChild(container);
-
-      // Create jsPDF instance
-      const pdfDoc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
-
-      // Set metadata
-      pdfDoc.setProperties({
-        title: originalFilename.replace(/\.(docx?|txt)$/i, ''),
-        author: 'ToolGlid',
-        creator: 'ToolGlid - Word to PDF Converter'
-      });
-
-      // Convert HTML to PDF using jsPDF's html method
-      pdfDoc.html(container, {
-        callback: function(doc) {
-          // Clean up temporary container
-          document.body.removeChild(container);
-
-          // Generate blob
-          const pdfBlob = doc.output('blob');
-          resolve(pdfBlob);
-        },
-        x: 15,
-        y: 15,
-        width: 180, // A4 width minus margins
-        windowWidth: 800, // Virtual window width for rendering
-        margin: [15, 15, 15, 15],
-        autoPaging: 'text',
-        html2canvas: {
-          scale: 0.5, // Adjust for better quality vs file size
-          useCORS: true,
-          logging: false,
-          letterRendering: true
-        }
-      });
-
-    } catch (error) {
-      reject(error);
-    }
-  });
 }
 
 // Helper function to create PDF from text with better formatting
