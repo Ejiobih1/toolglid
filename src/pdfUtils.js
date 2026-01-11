@@ -249,6 +249,7 @@ export async function pdfToWord(file) {
 export async function wordToPDF(file) {
   try {
     console.log('Starting Word to PDF conversion...');
+    console.log('File details:', { name: file.name, type: file.type, size: file.size });
 
     // Import supabase client
     const { supabase, SUPABASE_URL } = await import('./lib/supabase.js');
@@ -256,11 +257,17 @@ export async function wordToPDF(file) {
     // Get current session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
-    if (sessionError || !session) {
+    if (sessionError) {
+      console.error('Session error:', sessionError);
+      throw new Error('Authentication error. Please try logging in again.');
+    }
+
+    if (!session) {
       throw new Error('Please log in to use Word to PDF conversion');
     }
 
-    console.log('Uploading Word file to conversion API...');
+    console.log('User authenticated, uploading file...');
+    console.log('Function URL:', `${SUPABASE_URL}/functions/v1/word-to-pdf`);
 
     // Create form data
     const formData = new FormData();
@@ -277,9 +284,21 @@ export async function wordToPDF(file) {
       body: formData,
     });
 
+    console.log('Response status:', response.status);
+    console.log('Response headers:', Object.fromEntries(response.headers));
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Conversion failed' }));
-      throw new Error(errorData.error || 'Conversion failed');
+      const errorText = await response.text();
+      console.error('Error response:', errorText);
+
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        errorData = { error: errorText || 'Conversion failed' };
+      }
+
+      throw new Error(errorData.error || `Conversion failed with status ${response.status}`);
     }
 
     console.log('Downloading converted PDF document...');
@@ -288,12 +307,14 @@ export async function wordToPDF(file) {
     const pdfBlob = await response.blob();
 
     console.log('Word to PDF conversion completed successfully!');
+    console.log('PDF size:', pdfBlob.size, 'bytes');
 
     return pdfBlob;
 
   } catch (error) {
     console.error('Word to PDF conversion failed:', error);
-    throw error;
+    console.error('Error stack:', error.stack);
+    throw new Error(`Word to PDF conversion failed: ${error.message}`);
   }
 }
 
