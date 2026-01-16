@@ -1,8 +1,12 @@
 import { PDFDocument, degrees, StandardFonts, rgb } from 'pdf-lib';
 import jsPDF from 'jspdf';
 
-// SERVERLESS - No backend API needed
-// All PDF operations now run 100% client-side in the browser
+// HYBRID APPROACH:
+// - Simple PDF operations run 100% client-side in the browser
+// - Complex conversions (PDF↔Word, PDF→Excel) use ConvertX API
+
+// ConvertX API URL - Set this in your .env file as REACT_APP_CONVERTX_API_URL
+const CONVERTX_API_URL = process.env.REACT_APP_CONVERTX_API_URL || null;
 
 // Merge multiple PDFs into one
 export async function mergePDFs(files) {
@@ -188,12 +192,12 @@ export async function jpgToPDF(files) {
   }
 }
 
-// Convert PDF to Word - Using server-side ConvertAPI for high-quality conversion (Premium Only)
+// Convert PDF to Word - Using ConvertX API for high-quality conversion (Premium Only)
 export async function pdfToWord(file) {
   try {
     console.log('Starting PDF to Word conversion (Premium Feature)...');
 
-    // Import supabase client
+    // Import supabase client for auth check
     const { supabase, SUPABASE_URL } = await import('./lib/supabase.js');
 
     // Get current session
@@ -203,41 +207,58 @@ export async function pdfToWord(file) {
       throw new Error('Please log in to use PDF to Word conversion');
     }
 
-    console.log('Uploading PDF to conversion API...');
+    // Use ConvertX API if available, otherwise fall back to edge function
+    if (CONVERTX_API_URL) {
+      console.log('Using ConvertX API for conversion...');
 
-    // Create form data
-    const formData = new FormData();
-    formData.append('file', file);
+      const formData = new FormData();
+      formData.append('file', file);
 
-    // Call the edge function
-    const functionUrl = `${SUPABASE_URL}/functions/v1/pdf-to-word`;
+      const response = await fetch(`${CONVERTX_API_URL}/convert/sync/pdf/to/docx`, {
+        method: 'POST',
+        body: formData,
+      });
 
-    const response = await fetch(functionUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: formData,
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: 'Conversion failed' }));
-
-      if (response.status === 403) {
-        throw new Error('Premium subscription required. PDF to Word conversion is a premium feature that preserves formatting, images, and tables - just like SmallPDF!');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Conversion failed: ${errorText}`);
       }
 
-      throw new Error(errorData.error || 'Conversion failed');
+      const docxBlob = await response.blob();
+      console.log('PDF to Word conversion completed successfully!');
+      return docxBlob;
+
+    } else {
+      // Fallback to Supabase edge function
+      console.log('Using Supabase edge function for conversion...');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const functionUrl = `${SUPABASE_URL}/functions/v1/pdf-to-word`;
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Conversion failed' }));
+
+        if (response.status === 403) {
+          throw new Error('Premium subscription required. PDF to Word conversion is a premium feature that preserves formatting, images, and tables!');
+        }
+
+        throw new Error(errorData.error || 'Conversion failed');
+      }
+
+      const docxBlob = await response.blob();
+      console.log('PDF to Word conversion completed successfully!');
+      return docxBlob;
     }
-
-    console.log('Downloading converted Word document...');
-
-    // Get the blob response
-    const docxBlob = await response.blob();
-
-    console.log('PDF to Word conversion completed successfully!');
-
-    return docxBlob;
 
   } catch (error) {
     console.error('PDF to Word conversion failed:', error);
@@ -245,13 +266,13 @@ export async function pdfToWord(file) {
   }
 }
 
-// Convert Word to PDF using ConvertAPI (preserves all formatting)
+// Convert Word to PDF using ConvertX API (preserves all formatting)
 export async function wordToPDF(file) {
   try {
     console.log('Starting Word to PDF conversion...');
     console.log('File details:', { name: file.name, type: file.type, size: file.size });
 
-    // Import supabase client
+    // Import supabase client for auth check
     const { supabase, SUPABASE_URL } = await import('./lib/supabase.js');
 
     // Get current session
@@ -266,55 +287,107 @@ export async function wordToPDF(file) {
       throw new Error('Please log in to use Word to PDF conversion');
     }
 
-    console.log('User authenticated, uploading file...');
-    console.log('Function URL:', `${SUPABASE_URL}/functions/v1/word-to-pdf`);
+    // Use ConvertX API if available
+    if (CONVERTX_API_URL) {
+      console.log('Using ConvertX API for conversion...');
 
-    // Create form data
-    const formData = new FormData();
-    formData.append('file', file);
+      const formData = new FormData();
+      formData.append('file', file);
 
-    // Call the edge function
-    const functionUrl = `${SUPABASE_URL}/functions/v1/word-to-pdf`;
+      const response = await fetch(`${CONVERTX_API_URL}/convert/sync/docx/to/pdf`, {
+        method: 'POST',
+        body: formData,
+      });
 
-    const response = await fetch(functionUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-      },
-      body: formData,
-    });
-
-    console.log('Response status:', response.status);
-    console.log('Response headers:', Object.fromEntries(response.headers));
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Error response:', errorText);
-
-      let errorData;
-      try {
-        errorData = JSON.parse(errorText);
-      } catch (e) {
-        errorData = { error: errorText || 'Conversion failed' };
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Conversion failed: ${errorText}`);
       }
 
-      throw new Error(errorData.error || `Conversion failed with status ${response.status}`);
+      const pdfBlob = await response.blob();
+      console.log('Word to PDF conversion completed successfully!');
+      return pdfBlob;
+
+    } else {
+      // Fallback to Supabase edge function
+      console.log('Using Supabase edge function for conversion...');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const functionUrl = `${SUPABASE_URL}/functions/v1/word-to-pdf`;
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { error: errorText || 'Conversion failed' };
+        }
+        throw new Error(errorData.error || `Conversion failed with status ${response.status}`);
+      }
+
+      const pdfBlob = await response.blob();
+      console.log('Word to PDF conversion completed successfully!');
+      return pdfBlob;
     }
-
-    console.log('Downloading converted PDF document...');
-
-    // Get the blob response
-    const pdfBlob = await response.blob();
-
-    console.log('Word to PDF conversion completed successfully!');
-    console.log('PDF size:', pdfBlob.size, 'bytes');
-
-    return pdfBlob;
 
   } catch (error) {
     console.error('Word to PDF conversion failed:', error);
-    console.error('Error stack:', error.stack);
     throw new Error(`Word to PDF conversion failed: ${error.message}`);
+  }
+}
+
+// Convert PDF to Excel using ConvertX API (extracts tables)
+export async function pdfToExcel(file) {
+  try {
+    console.log('Starting PDF to Excel conversion...');
+
+    // Import supabase client for auth check
+    const { supabase } = await import('./lib/supabase.js');
+
+    // Get current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError || !session) {
+      throw new Error('Please log in to use PDF to Excel conversion');
+    }
+
+    if (!CONVERTX_API_URL) {
+      throw new Error('PDF to Excel conversion requires ConvertX API. Please contact support.');
+    }
+
+    console.log('Using ConvertX API for PDF to Excel conversion...');
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${CONVERTX_API_URL}/convert/sync/pdf/to/xlsx`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Conversion failed: ${errorText}`);
+    }
+
+    const xlsxBlob = await response.blob();
+    console.log('PDF to Excel conversion completed successfully!');
+    return xlsxBlob;
+
+  } catch (error) {
+    console.error('PDF to Excel conversion failed:', error);
+    throw error;
   }
 }
 
