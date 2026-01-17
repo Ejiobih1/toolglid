@@ -65,6 +65,10 @@ class TableCell:
     y0: float
     x1: float
     y1: float
+    bg_color: Tuple[float, float, float] = None  # Background color (RGB 0-1)
+    text_color: Tuple[float, float, float] = None  # Text color (RGB 0-1)
+    font_size: float = 11
+    is_bold: bool = False
 
 
 class PDFToWordConverter:
@@ -89,10 +93,18 @@ class PDFToWordConverter:
 
     def _setup_styles(self):
         """Configure default Word document styles"""
+        from docx.shared import Twips
+        from docx.enum.style import WD_STYLE_TYPE
+
         # Set default font
         style = self.word_doc.styles['Normal']
         style.font.name = 'Calibri'
         style.font.size = Pt(11)
+
+        # Set paragraph spacing for Normal style (tighter spacing)
+        style.paragraph_format.space_before = Pt(0)
+        style.paragraph_format.space_after = Pt(6)  # Small gap between paragraphs
+        style.paragraph_format.line_spacing = 1.15  # Slightly tighter line spacing
 
         # Set narrow margins for better layout matching
         sections = self.word_doc.sections
@@ -186,30 +198,105 @@ class PDFToWordConverter:
         return images
 
     def _detect_tables(self, page: fitz.Page) -> List[List[TableCell]]:
-        """Detect and extract tables from a page"""
+        """Detect and extract tables from a page with colors"""
         tables = []
 
         # Use PyMuPDF's table detection
         try:
             tab_finder = page.find_tables()
 
+            # Get all drawings (rectangles with fill colors) for background detection
+            drawings = page.get_drawings()
+
+            # Get text dict for color extraction
+            text_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+
             for table in tab_finder.tables:
                 cells = []
-                for row_idx, row in enumerate(table.extract()):
+                table_data = table.extract()
+
+                # Get cell positions if available
+                try:
+                    cell_positions = table.cells  # List of cell rectangles
+                except:
+                    cell_positions = None
+
+                for row_idx, row in enumerate(table_data):
                     for col_idx, cell_text in enumerate(row):
-                        if cell_text:
-                            cells.append(TableCell(
-                                text=str(cell_text),
-                                row=row_idx,
-                                col=col_idx,
-                                x0=0, y0=0, x1=0, y1=0  # Positions handled by table structure
-                            ))
+                        cell_x0, cell_y0, cell_x1, cell_y1 = 0, 0, 0, 0
+                        bg_color = None
+                        text_color = None
+                        font_size = 11
+                        is_bold = False
+
+                        # Try to get cell position
+                        if cell_positions:
+                            try:
+                                cell_idx = row_idx * len(row) + col_idx
+                                if cell_idx < len(cell_positions):
+                                    cell_rect = cell_positions[cell_idx]
+                                    cell_x0, cell_y0, cell_x1, cell_y1 = cell_rect[:4]
+                            except:
+                                pass
+
+                        # If we have cell position, look for background color
+                        if cell_x0 != 0 or cell_y0 != 0:
+                            # Find fill rectangles that overlap this cell
+                            for drawing in drawings:
+                                if drawing.get("fill") and drawing.get("rect"):
+                                    d_rect = drawing["rect"]
+                                    # Check if this drawing overlaps with the cell
+                                    if (d_rect[0] <= cell_x0 + 5 and d_rect[2] >= cell_x1 - 5 and
+                                        d_rect[1] <= cell_y0 + 5 and d_rect[3] >= cell_y1 - 5):
+                                        fill_color = drawing.get("fill")
+                                        if fill_color and fill_color != (1, 1, 1):  # Not white
+                                            bg_color = fill_color
+                                            break
+
+                            # Find text color in this cell area
+                            for block in text_dict.get("blocks", []):
+                                if block.get("type") != 0:
+                                    continue
+                                for line in block.get("lines", []):
+                                    for span in line.get("spans", []):
+                                        span_bbox = span.get("bbox", (0, 0, 0, 0))
+                                        # Check if span is within cell
+                                        if (span_bbox[0] >= cell_x0 - 5 and span_bbox[2] <= cell_x1 + 5 and
+                                            span_bbox[1] >= cell_y0 - 5 and span_bbox[3] <= cell_y1 + 5):
+                                            # Get text color
+                                            color_int = span.get("color", 0)
+                                            r = ((color_int >> 16) & 0xFF) / 255.0
+                                            g = ((color_int >> 8) & 0xFF) / 255.0
+                                            b = (color_int & 0xFF) / 255.0
+                                            if (r, g, b) != (0, 0, 0):  # Not black
+                                                text_color = (r, g, b)
+
+                                            # Get font info
+                                            font_size = span.get("size", 11)
+                                            flags = span.get("flags", 0)
+                                            font_name = span.get("font", "")
+                                            is_bold = bool(flags & 2**4) or "bold" in font_name.lower()
+                                            break
+
+                        cells.append(TableCell(
+                            text=str(cell_text) if cell_text else "",
+                            row=row_idx,
+                            col=col_idx,
+                            x0=cell_x0,
+                            y0=cell_y0,
+                            x1=cell_x1,
+                            y1=cell_y1,
+                            bg_color=bg_color,
+                            text_color=text_color,
+                            font_size=font_size,
+                            is_bold=is_bold
+                        ))
 
                 if cells:
                     tables.append({
                         'cells': cells,
-                        'rows': len(table.extract()),
-                        'cols': len(table.extract()[0]) if table.extract() else 0,
+                        'rows': len(table_data),
+                        'cols': len(table_data[0]) if table_data else 0,
                         'bbox': table.bbox
                     })
         except Exception as e:
@@ -234,8 +321,8 @@ class PDFToWordConverter:
 
         return (is_larger or is_bold) and is_short
 
-    def _group_text_into_paragraphs(self, blocks: List[TextBlock]) -> List[List[TextBlock]]:
-        """Group text blocks into paragraphs based on position"""
+    def _group_text_into_paragraphs(self, blocks: List[TextBlock]) -> List[dict]:
+        """Group text blocks into paragraphs based on position, with spacing info"""
         if not blocks:
             return []
 
@@ -244,6 +331,7 @@ class PDFToWordConverter:
 
         paragraphs = []
         current_para = [sorted_blocks[0]]
+        prev_para_y1 = 0  # Track end of previous paragraph
 
         for i in range(1, len(sorted_blocks)):
             prev = sorted_blocks[i - 1]
@@ -253,7 +341,7 @@ class PDFToWordConverter:
             same_line = abs(curr.y0 - prev.y0) < prev.font_size * 0.5
 
             # Check if continuation (small gap)
-            small_gap = curr.y0 - prev.y1 < prev.font_size * 2
+            small_gap = curr.y0 - prev.y1 < prev.font_size * 1.5
 
             # Check if same block
             same_block = curr.block_no == prev.block_no
@@ -261,11 +349,31 @@ class PDFToWordConverter:
             if same_line or (small_gap and same_block):
                 current_para.append(curr)
             else:
-                paragraphs.append(current_para)
+                # Calculate spacing before this break
+                para_y0 = min(b.y0 for b in current_para)
+                para_y1 = max(b.y1 for b in current_para)
+                space_before = para_y0 - prev_para_y1 if prev_para_y1 > 0 else 0
+
+                paragraphs.append({
+                    'blocks': current_para,
+                    'y0': para_y0,
+                    'y1': para_y1,
+                    'space_before': space_before
+                })
+                prev_para_y1 = para_y1
                 current_para = [curr]
 
+        # Add last paragraph
         if current_para:
-            paragraphs.append(current_para)
+            para_y0 = min(b.y0 for b in current_para)
+            para_y1 = max(b.y1 for b in current_para)
+            space_before = para_y0 - prev_para_y1 if prev_para_y1 > 0 else 0
+            paragraphs.append({
+                'blocks': current_para,
+                'y0': para_y0,
+                'y1': para_y1,
+                'space_before': space_before
+            })
 
         return paragraphs
 
@@ -300,8 +408,36 @@ class PDFToWordConverter:
         except Exception as e:
             print(f"Warning: Could not add image: {e}")
 
+    def _set_cell_shading(self, cell, color: Tuple[float, float, float]):
+        """Set cell background color using XML"""
+        try:
+            # Convert RGB float (0-1) to hex
+            r = int(color[0] * 255)
+            g = int(color[1] * 255)
+            b = int(color[2] * 255)
+            hex_color = f"{r:02X}{g:02X}{b:02X}"
+
+            # Get or create tcPr element
+            tc = cell._tc
+            tcPr = tc.get_or_add_tcPr()
+
+            # Create shading element
+            shading = OxmlElement('w:shd')
+            shading.set(qn('w:fill'), hex_color)
+            shading.set(qn('w:val'), 'clear')
+            shading.set(qn('w:color'), 'auto')
+
+            # Remove existing shading if present
+            existing_shd = tcPr.find(qn('w:shd'))
+            if existing_shd is not None:
+                tcPr.remove(existing_shd)
+
+            tcPr.append(shading)
+        except Exception as e:
+            print(f"Warning: Could not set cell shading: {e}")
+
     def _add_table(self, table_data: dict):
-        """Add a table to the Word document"""
+        """Add a table to the Word document with colors"""
         try:
             rows = table_data['rows']
             cols = table_data['cols']
@@ -315,12 +451,41 @@ class PDFToWordConverter:
             table.style = 'Table Grid'
             table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-            # Fill cells
+            # Fill cells with text, colors, and formatting
             for cell in cells:
                 try:
                     table_cell = table.cell(cell.row, cell.col)
-                    table_cell.text = cell.text
-                except Exception:
+
+                    # Clear default paragraph and add formatted text
+                    table_cell.text = ""  # Clear first
+                    para = table_cell.paragraphs[0]
+
+                    # Add text with formatting
+                    if cell.text:
+                        run = para.add_run(cell.text)
+
+                        # Apply font size
+                        if cell.font_size:
+                            run.font.size = Pt(cell.font_size)
+
+                        # Apply bold
+                        if cell.is_bold:
+                            run.font.bold = True
+
+                        # Apply text color
+                        if cell.text_color:
+                            run.font.color.rgb = RGBColor(
+                                int(cell.text_color[0] * 255),
+                                int(cell.text_color[1] * 255),
+                                int(cell.text_color[2] * 255)
+                            )
+
+                    # Apply background color
+                    if cell.bg_color:
+                        self._set_cell_shading(table_cell, cell.bg_color)
+
+                except Exception as e:
+                    print(f"Warning: Could not format cell ({cell.row}, {cell.col}): {e}")
                     continue
 
             # Add spacing after table
@@ -377,11 +542,10 @@ class PDFToWordConverter:
             # Combine all content with positions for ordering
             content_items = []
 
-            # Add paragraphs
-            for para_blocks in paragraphs:
-                if para_blocks:
-                    y_pos = min(b.y0 for b in para_blocks)
-                    content_items.append(('text', y_pos, para_blocks))
+            # Add paragraphs (now using dict structure)
+            for para_data in paragraphs:
+                if para_data and para_data.get('blocks'):
+                    content_items.append(('text', para_data['y0'], para_data))
 
             # Add images
             for img in images:
@@ -397,7 +561,9 @@ class PDFToWordConverter:
             # Add content to Word document
             for item_type, _, item in content_items:
                 if item_type == 'text':
-                    para_blocks = item
+                    para_data = item
+                    para_blocks = para_data['blocks']
+                    space_before = para_data.get('space_before', 0)
 
                     # Check if heading
                     first_block = para_blocks[0]
@@ -408,6 +574,15 @@ class PDFToWordConverter:
 
                     if is_heading:
                         para.style = 'Heading 1' if first_block.font_size > avg_font_size * 1.5 else 'Heading 2'
+
+                    # Set paragraph spacing based on PDF layout
+                    # Convert PDF points to Word points (approximate)
+                    if space_before > 20:  # Large gap - probably new section
+                        para.paragraph_format.space_before = Pt(12)
+                    elif space_before > 10:  # Medium gap
+                        para.paragraph_format.space_before = Pt(6)
+                    else:  # Small gap - same section
+                        para.paragraph_format.space_before = Pt(0)
 
                     # Add text with formatting
                     for block in para_blocks:
@@ -474,10 +649,10 @@ class PDFToWordConverter:
 
             content_items = []
 
-            for para_blocks in paragraphs:
-                if para_blocks:
-                    y_pos = min(b.y0 for b in para_blocks)
-                    content_items.append(('text', y_pos, para_blocks))
+            # Add paragraphs (now using dict structure)
+            for para_data in paragraphs:
+                if para_data and para_data.get('blocks'):
+                    content_items.append(('text', para_data['y0'], para_data))
 
             for img in images:
                 content_items.append(('image', img.y0, img))
@@ -489,7 +664,10 @@ class PDFToWordConverter:
 
             for item_type, _, item in content_items:
                 if item_type == 'text':
-                    para_blocks = item
+                    para_data = item
+                    para_blocks = para_data['blocks']
+                    space_before = para_data.get('space_before', 0)
+
                     first_block = para_blocks[0]
                     is_heading = self._is_heading(first_block, avg_font_size)
 
@@ -497,6 +675,14 @@ class PDFToWordConverter:
 
                     if is_heading:
                         para.style = 'Heading 1' if first_block.font_size > avg_font_size * 1.5 else 'Heading 2'
+
+                    # Set paragraph spacing based on PDF layout
+                    if space_before > 20:  # Large gap
+                        para.paragraph_format.space_before = Pt(12)
+                    elif space_before > 10:  # Medium gap
+                        para.paragraph_format.space_before = Pt(6)
+                    else:  # Small gap
+                        para.paragraph_format.space_before = Pt(0)
 
                     for block in para_blocks:
                         self._add_formatted_text(
