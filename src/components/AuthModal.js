@@ -58,7 +58,7 @@ const AuthModal = ({ darkMode, onClose, onSuccess }) => {
   // Real-time password strength validation
   useEffect(() => {
     if (mode === 'register' && password) {
-      const { strength, checks } = calculatePasswordStrength(password);
+      const { strength } = calculatePasswordStrength(password);
       setPasswordStrength(strength);
 
       if (strength < 40) {

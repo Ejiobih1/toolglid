@@ -481,6 +481,7 @@ export async function excelToPDF(file) {
 }
 
 // Helper function to create PDF from text with better formatting
+// eslint-disable-next-line no-unused-vars
 function createPDFFromText(text, originalFilename = 'document') {
   const pdfDoc = new jsPDF({
     orientation: 'portrait',
@@ -585,7 +586,6 @@ export async function protectPDF(file, watermarkText, options = {}) {
       rotation = 45,
       color = '#999999',
       logoFile,
-      logoPreview,
       logoSize = 100
     } = options;
 
@@ -642,8 +642,6 @@ export async function protectPDF(file, watermarkText, options = {}) {
         // Try PNG as default
         embeddedImage = await pdfDoc.embedPng(logoArrayBuffer);
       }
-
-      const imageDims = embeddedImage.scale(1);
 
       pages.forEach(page => {
         const { width, height } = page.getSize();
@@ -962,9 +960,6 @@ export async function editMetadata(file, metadata) {
 // Extract images from PDF
 export async function extractImages(file) {
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdfDoc = await PDFDocument.load(arrayBuffer, { ignoreEncryption: true });
-
     // Note: pdf-lib doesn't have direct image extraction
     // We'll convert pages to images as a workaround
     return await pdfToJPG(file);

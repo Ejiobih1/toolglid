@@ -39,8 +39,6 @@ import {
   getUserId,
   hasUserSubscribed,
   setUserSubscribed,
-  isReturningUser,
-  getWelcomeMessage,
   updateLastVisit
 } from './utils/userTracking';
 

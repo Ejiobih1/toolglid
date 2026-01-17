@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RotateCw, Check, X, Move, ZoomIn, ZoomOut, Trash2, GripVertical, Plus, Minus, Upload } from 'lucide-react';
+import { RotateCw, Check, X, ZoomIn, ZoomOut, Trash2, GripVertical, Upload } from 'lucide-react';
 
 // Visual Rotate Tool Component
 export function RotateEditor({ file, onComplete, onCancel, darkMode }) {
@@ -10,12 +10,14 @@ export function RotateEditor({ file, onComplete, onCancel, darkMode }) {
 
   useEffect(() => {
     loadPDF();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   useEffect(() => {
     if (pdfPages.length > 0) {
       renderPreview();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentRotation, pdfPages]);
 
   const loadPDF = async () => {
@@ -223,6 +225,7 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   // Render PDF when page loads or scale changes
@@ -234,6 +237,7 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
       }, 50);
       return () => clearTimeout(timer);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfPage, scale]);
 
   // Render crop overlay when crop area or dimensions change
@@ -241,6 +245,7 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
     if (dimensions.width > 0 && dimensions.height > 0) {
       drawCropOverlay();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cropArea, dimensions]);
 
   const loadPDF = async () => {
@@ -412,6 +417,8 @@ export function CropEditor({ file, onComplete, onCancel, darkMode }) {
             break;
           case 'right':
             newArea.right = Math.max(0, Math.min(dimensions.width - canvasX, dimensions.width - prev.left - 50));
+            break;
+          default:
             break;
         }
 
@@ -672,6 +679,7 @@ export function OrganizePagesEditor({ file, onComplete, onCancel, darkMode }) {
 
   useEffect(() => {
     loadPDF();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   const loadPDF = async () => {
@@ -857,6 +865,7 @@ export function ExtractDeletePagesEditor({ file, onComplete, onCancel, darkMode,
 
   useEffect(() => {
     loadPDF();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   const loadPDF = async () => {
@@ -1058,12 +1067,14 @@ export function ResizeEditor({ file, onApply, onCancel, darkMode }) {
 
   useEffect(() => {
     loadPDF();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   useEffect(() => {
     if (pages.length > 0) {
       renderPreview();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages, selectedSize]);
 
   const loadPDF = async () => {
@@ -1247,12 +1258,14 @@ export function AddPageNumbersEditor({ file, onApply, onCancel, darkMode }) {
 
   useEffect(() => {
     loadPDF();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   useEffect(() => {
     if (pages.length > 0) {
       renderPreview();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages, position, startNumber, format, fontSize]);
 
   const loadPDF = async () => {
@@ -1521,12 +1534,14 @@ export function WatermarkEditor({ file, onApply, onCancel, darkMode }) {
 
   useEffect(() => {
     loadPDF();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file]);
 
   useEffect(() => {
     if (pages.length > 0) {
       renderPreview();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pages, watermarkType, text, opacity, fontSize, rotation, color, logoPreview, logoSize]);
 
   const handleLogoUpload = (e) => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Plus, Edit2, Trash2, Save, X, Youtube, Clock, Unlock, RefreshCw } from 'lucide-react';
+import { Lock, Plus, Edit2, Trash2, Save, Youtube, Clock, Unlock, RefreshCw } from 'lucide-react';
 import { supabase } from './lib/supabase';
 
 export default function AdminPage({ darkMode }) {
