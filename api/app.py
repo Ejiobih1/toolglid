@@ -205,49 +205,91 @@ async def run_command(cmd: List[str], timeout: int = 120) -> tuple:
 
 
 # -------- Document Converters (LibreOffice-based) --------
-async def libreoffice_convert(input_path: Path, output_format: str, output_dir: Path) -> Path:
-    """Convert using LibreOffice in headless mode"""
+async def libreoffice_convert(input_path: Path, output_format: str, output_dir: Path,
+                               filter_options: str = None) -> Path:
+    """Convert using LibreOffice in headless mode with optimized settings"""
+
+    # Build the convert-to argument with optional filter
+    if filter_options:
+        convert_arg = f"{output_format}:{filter_options}"
+    else:
+        convert_arg = output_format
+
     cmd = [
         "soffice",
         "--headless",
-        "--convert-to", output_format,
+        "--nofirststartwizard",
+        "--norestore",
+        "--nologo",
+        "--convert-to", convert_arg,
         "--outdir", str(output_dir),
         str(input_path)
     ]
-    
-    returncode, stdout, stderr = await run_command(cmd)
-    
+
+    # Set environment for better font rendering
+    env = os.environ.copy()
+    env["SAL_USE_VCLPLUGIN"] = "gen"  # Use generic rendering
+
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=180)
+        returncode = process.returncode
+        stdout_str = stdout.decode()
+        stderr_str = stderr.decode()
+    except asyncio.TimeoutError:
+        process.kill()
+        raise RuntimeError("LibreOffice conversion timed out")
+
     if returncode != 0:
-        raise RuntimeError(f"LibreOffice conversion failed: {stderr}")
-    
+        raise RuntimeError(f"LibreOffice conversion failed: {stderr_str}")
+
     # Find the output file
     expected_output = output_dir / f"{input_path.stem}.{output_format}"
     if expected_output.exists():
         return expected_output
-    
+
     # Sometimes LibreOffice outputs with different name
     for f in output_dir.glob(f"*.{output_format}"):
         return f
-    
+
     raise RuntimeError("Conversion completed but output file not found")
 
 
 @ConverterRegistry.register(ConversionFormat.DOCX, ConversionFormat.PDF)
 async def docx_to_pdf(input_path: Path, output_dir: Path, options: Dict) -> Path:
-    """Convert DOCX to PDF using LibreOffice"""
-    return await libreoffice_convert(input_path, "pdf", output_dir)
+    """Convert DOCX to PDF using LibreOffice with optimized settings"""
+    # Use writer_pdf_Export filter for better Word document conversion
+    filter_options = "writer_pdf_Export"
+    return await libreoffice_convert(input_path, "pdf", output_dir, filter_options)
 
 
 @ConverterRegistry.register(ConversionFormat.DOC, ConversionFormat.PDF)
 async def doc_to_pdf(input_path: Path, output_dir: Path, options: Dict) -> Path:
-    """Convert DOC to PDF using LibreOffice"""
-    return await libreoffice_convert(input_path, "pdf", output_dir)
+    """Convert DOC to PDF using LibreOffice with optimized settings"""
+    filter_options = "writer_pdf_Export"
+    return await libreoffice_convert(input_path, "pdf", output_dir, filter_options)
 
 
 @ConverterRegistry.register(ConversionFormat.XLSX, ConversionFormat.PDF)
 async def xlsx_to_pdf(input_path: Path, output_dir: Path, options: Dict) -> Path:
-    """Convert XLSX to PDF using LibreOffice"""
-    return await libreoffice_convert(input_path, "pdf", output_dir)
+    """Convert XLSX to PDF using LibreOffice with optimized settings for spreadsheets"""
+    # Use calc_pdf_Export filter with high quality settings
+    # This preserves images, charts, formatting better
+    filter_options = "calc_pdf_Export"
+    return await libreoffice_convert(input_path, "pdf", output_dir, filter_options)
+
+
+@ConverterRegistry.register(ConversionFormat.XLS, ConversionFormat.PDF)
+async def xls_to_pdf(input_path: Path, output_dir: Path, options: Dict) -> Path:
+    """Convert XLS to PDF using LibreOffice with optimized settings"""
+    filter_options = "calc_pdf_Export"
+    return await libreoffice_convert(input_path, "pdf", output_dir, filter_options)
 
 
 @ConverterRegistry.register(ConversionFormat.PPTX, ConversionFormat.PDF)

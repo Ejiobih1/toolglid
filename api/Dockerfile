@@ -14,11 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
     python3.11-venv \
     python3-pip \
-    # LibreOffice for document conversions
+    # LibreOffice for document conversions (full package for better compatibility)
     libreoffice \
     libreoffice-writer \
     libreoffice-calc \
     libreoffice-impress \
+    libreoffice-draw \
+    libreoffice-common \
+    libreoffice-java-common \
     # PDF tools
     poppler-utils \
     qpdf \
@@ -29,10 +32,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wkhtmltopdf \
     # Pandoc for markdown
     pandoc \
-    # Fonts
+    # Fonts - comprehensive font support for Excel/Word formatting
     fonts-liberation \
+    fonts-liberation2 \
     fonts-dejavu \
+    fonts-dejavu-core \
+    fonts-dejavu-extra \
     fonts-freefont-ttf \
+    fonts-noto \
+    fonts-noto-core \
+    fonts-noto-mono \
+    fonts-opensymbol \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
+    fontconfig \
     # LaTeX for pandoc PDF
     texlive-xetex \
     texlive-fonts-recommended \
@@ -40,8 +53,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     ca-certificates \
+    software-properties-common \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
+
+# Update font cache for better font rendering
+RUN fc-cache -f -v
 
 # Create app user
 RUN useradd -m -s /bin/bash appuser
