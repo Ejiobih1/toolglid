@@ -1,0 +1,2 @@
+# Ignore ConvertX API folder (deployed separately to Render)
+api/
