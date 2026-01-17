@@ -1,11 +1,5 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "build",
-  "framework": "create-react-app",
-  "functions": {
-    "api/**": {
-      "excludeFiles": "**"
-    }
-  },
-  "rewrites": []
+  "framework": "create-react-app"
 }
