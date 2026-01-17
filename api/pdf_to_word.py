@@ -263,13 +263,12 @@ class PDFToWordConverter:
                                         # Check if span is within cell
                                         if (span_bbox[0] >= cell_x0 - 5 and span_bbox[2] <= cell_x1 + 5 and
                                             span_bbox[1] >= cell_y0 - 5 and span_bbox[3] <= cell_y1 + 5):
-                                            # Get text color
+                                            # Get text color - ALWAYS preserve exact color
                                             color_int = span.get("color", 0)
                                             r = ((color_int >> 16) & 0xFF) / 255.0
                                             g = ((color_int >> 8) & 0xFF) / 255.0
                                             b = (color_int & 0xFF) / 255.0
-                                            if (r, g, b) != (0, 0, 0):  # Not black
-                                                text_color = (r, g, b)
+                                            text_color = (r, g, b)  # Keep ALL colors including black
 
                                             # Get font info
                                             font_size = span.get("size", 11)
@@ -385,13 +384,13 @@ class PDFToWordConverter:
         run.font.bold = is_bold
         run.font.italic = is_italic
 
-        # Set color if not black
-        if color != (0, 0, 0):
-            run.font.color.rgb = RGBColor(
-                int(color[0] * 255),
-                int(color[1] * 255),
-                int(color[2] * 255)
-            )
+        # ALWAYS set color explicitly to preserve exact PDF formatting
+        # This is important because heading styles may override with blue
+        run.font.color.rgb = RGBColor(
+            int(color[0] * 255),
+            int(color[1] * 255),
+            int(color[2] * 255)
+        )
 
     def _add_image(self, image: ImageBlock, page_width: float):
         """Add an image to the Word document"""
@@ -472,13 +471,16 @@ class PDFToWordConverter:
                         if cell.is_bold:
                             run.font.bold = True
 
-                        # Apply text color
+                        # ALWAYS apply text color to preserve exact formatting
                         if cell.text_color:
                             run.font.color.rgb = RGBColor(
                                 int(cell.text_color[0] * 255),
                                 int(cell.text_color[1] * 255),
                                 int(cell.text_color[2] * 255)
                             )
+                        else:
+                            # Default to black if no color extracted
+                            run.font.color.rgb = RGBColor(0, 0, 0)
 
                     # Apply background color
                     if cell.bg_color:
@@ -565,15 +567,9 @@ class PDFToWordConverter:
                     para_blocks = para_data['blocks']
                     space_before = para_data.get('space_before', 0)
 
-                    # Check if heading
-                    first_block = para_blocks[0]
-                    is_heading = self._is_heading(first_block, avg_font_size)
-
-                    # Create paragraph
+                    # Create paragraph - DO NOT use Word's heading styles
+                    # as they override text colors. Instead, preserve exact PDF formatting.
                     para = self.word_doc.add_paragraph()
-
-                    if is_heading:
-                        para.style = 'Heading 1' if first_block.font_size > avg_font_size * 1.5 else 'Heading 2'
 
                     # Set paragraph spacing based on PDF layout
                     # Convert PDF points to Word points (approximate)
@@ -668,13 +664,9 @@ class PDFToWordConverter:
                     para_blocks = para_data['blocks']
                     space_before = para_data.get('space_before', 0)
 
-                    first_block = para_blocks[0]
-                    is_heading = self._is_heading(first_block, avg_font_size)
-
+                    # Create paragraph - DO NOT use Word's heading styles
+                    # as they override text colors. Preserve exact PDF formatting.
                     para = self.word_doc.add_paragraph()
-
-                    if is_heading:
-                        para.style = 'Heading 1' if first_block.font_size > avg_font_size * 1.5 else 'Heading 2'
 
                     # Set paragraph spacing based on PDF layout
                     if space_before > 20:  # Large gap
