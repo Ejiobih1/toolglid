@@ -57,8 +57,8 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 COPY app.py .
 COPY pdf_to_word.py .
 COPY pdf_to_excel.py .
-COPY convertx.py .
-COPY convertx.js .
+COPY convertx_utils.py .
+COPY convertx_node.js .
 
 # Create directories for file storage
 RUN mkdir -p /tmp/convertx_uploads /tmp/convertx_outputs \
