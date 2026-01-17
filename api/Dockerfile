@@ -76,6 +76,11 @@ COPY pdf_to_word.py .
 COPY pdf_to_excel.py .
 COPY convertx_utils.py .
 COPY convertx_node.js .
+# Copy isolated API modules
+COPY word_to_pdf_api.py .
+COPY pdf_to_word_api.py .
+COPY excel_to_pdf_api.py .
+COPY pdf_to_excel_api.py .
 
 # Create directories for file storage
 RUN mkdir -p /tmp/convertx_uploads /tmp/convertx_outputs \
