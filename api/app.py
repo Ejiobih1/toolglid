@@ -4,10 +4,20 @@ A production-grade file conversion service similar to ConvertAPI
 
 Architecture:
 - FastAPI for high-performance async REST API
+- MODULAR API DESIGN: Each conversion tool has its own isolated endpoint
 - Worker pool for parallel conversions
-- Modular converter system (pluggable)
 - Temporary file management with auto-cleanup
 - Rate limiting and authentication ready
+
+ISOLATED API Endpoints (recommended - prevents tools from affecting each other):
+- /word-to-pdf/convert  - Word to PDF conversion
+- /pdf-to-word/convert  - PDF to Word conversion
+- /excel-to-pdf/convert - Excel to PDF conversion
+- /pdf-to-excel/convert - PDF to Excel conversion
+
+Legacy Combined Endpoints (still available for backwards compatibility):
+- /convert/sync/{source}/to/{target}
+- /convert/{source}/to/{target}
 
 Supported Conversions:
 - Documents: PDF ↔ DOCX, DOCX ↔ PDF, HTML → PDF
@@ -32,6 +42,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import aiofiles
+
+# Import isolated API routers
+from word_to_pdf_api import router as word_to_pdf_router
+from pdf_to_word_api import router as pdf_to_word_router
+from excel_to_pdf_api import router as excel_to_pdf_router
+from pdf_to_excel_api import router as pdf_to_excel_router
 
 
 # ============== Configuration ==============
@@ -808,15 +824,33 @@ app.add_middleware(
 )
 
 
+# ============== Include Isolated API Routers ==============
+# Each tool has its own isolated API to prevent interference
+app.include_router(word_to_pdf_router)   # /word-to-pdf/convert
+app.include_router(pdf_to_word_router)   # /pdf-to-word/convert
+app.include_router(excel_to_pdf_router)  # /excel-to-pdf/convert
+app.include_router(pdf_to_excel_router)  # /pdf-to-excel/convert
+
+
 # ============== API Routes ==============
 @app.get("/")
 async def root():
     """API information"""
     return {
         "name": "ConvertX API",
-        "version": "1.0.0",
-        "description": "High-performance file conversion service",
-        "documentation": "/docs"
+        "version": "2.0.0",
+        "description": "High-performance file conversion service with isolated tool APIs",
+        "documentation": "/docs",
+        "isolated_endpoints": {
+            "word_to_pdf": "/word-to-pdf/convert",
+            "pdf_to_word": "/pdf-to-word/convert",
+            "excel_to_pdf": "/excel-to-pdf/convert",
+            "pdf_to_excel": "/pdf-to-excel/convert"
+        },
+        "legacy_endpoints": {
+            "async": "/convert/{source}/to/{target}",
+            "sync": "/convert/sync/{source}/to/{target}"
+        }
     }
 
 

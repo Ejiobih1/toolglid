@@ -192,10 +192,11 @@ export async function jpgToPDF(files) {
   }
 }
 
-// Convert PDF to Word - Using ConvertX API for high-quality conversion (Premium Only)
+// Convert PDF to Word - Using ISOLATED ConvertX API endpoint for high-quality conversion (Premium Only)
+// This uses a separate API endpoint that won't be affected by other tools
 export async function pdfToWord(file) {
   try {
-    console.log('Starting PDF to Word conversion (Premium Feature)...');
+    console.log('Starting PDF to Word conversion (Isolated API - Premium Feature)...');
 
     // Import supabase client for auth check
     const { supabase, SUPABASE_URL } = await import('./lib/supabase.js');
@@ -207,14 +208,15 @@ export async function pdfToWord(file) {
       throw new Error('Please log in to use PDF to Word conversion');
     }
 
-    // Use ConvertX API if available, otherwise fall back to edge function
+    // Use ISOLATED ConvertX API endpoint if available
     if (CONVERTX_API_URL) {
-      console.log('Using ConvertX API for conversion...');
+      console.log('Using ISOLATED PDF-to-Word API endpoint...');
 
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${CONVERTX_API_URL}/convert/sync/pdf/to/docx`, {
+      // NEW: Uses isolated endpoint /pdf-to-word/convert instead of /convert/sync/pdf/to/docx
+      const response = await fetch(`${CONVERTX_API_URL}/pdf-to-word/convert`, {
         method: 'POST',
         body: formData,
       });
@@ -266,10 +268,11 @@ export async function pdfToWord(file) {
   }
 }
 
-// Convert Word to PDF using ConvertX API (preserves all formatting)
+// Convert Word to PDF using ISOLATED ConvertX API endpoint
+// This uses a separate API endpoint that won't be affected by other tools
 export async function wordToPDF(file) {
   try {
-    console.log('Starting Word to PDF conversion...');
+    console.log('Starting Word to PDF conversion (Isolated API)...');
     console.log('File details:', { name: file.name, type: file.type, size: file.size });
 
     // Import supabase client for auth check
@@ -287,14 +290,15 @@ export async function wordToPDF(file) {
       throw new Error('Please log in to use Word to PDF conversion');
     }
 
-    // Use ConvertX API if available
+    // Use ISOLATED ConvertX API endpoint if available
     if (CONVERTX_API_URL) {
-      console.log('Using ConvertX API for conversion...');
+      console.log('Using ISOLATED Word-to-PDF API endpoint...');
 
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${CONVERTX_API_URL}/convert/sync/docx/to/pdf`, {
+      // NEW: Uses isolated endpoint /word-to-pdf/convert instead of /convert/sync/docx/to/pdf
+      const response = await fetch(`${CONVERTX_API_URL}/word-to-pdf/convert`, {
         method: 'POST',
         body: formData,
       });
@@ -347,10 +351,11 @@ export async function wordToPDF(file) {
   }
 }
 
-// Convert PDF to Excel using ConvertX API (extracts tables)
+// Convert PDF to Excel using ISOLATED ConvertX API endpoint (extracts tables)
+// This uses a separate API endpoint that won't be affected by other tools
 export async function pdfToExcel(file) {
   try {
-    console.log('Starting PDF to Excel conversion...');
+    console.log('Starting PDF to Excel conversion (Isolated API)...');
 
     // Import supabase client for auth check
     const { supabase } = await import('./lib/supabase.js');
@@ -366,12 +371,13 @@ export async function pdfToExcel(file) {
       throw new Error('PDF to Excel conversion requires ConvertX API. Please contact support.');
     }
 
-    console.log('Using ConvertX API for PDF to Excel conversion...');
+    console.log('Using ISOLATED PDF-to-Excel API endpoint...');
 
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${CONVERTX_API_URL}/convert/sync/pdf/to/xlsx`, {
+    // NEW: Uses isolated endpoint /pdf-to-excel/convert instead of /convert/sync/pdf/to/xlsx
+    const response = await fetch(`${CONVERTX_API_URL}/pdf-to-excel/convert`, {
       method: 'POST',
       body: formData,
     });
@@ -391,10 +397,11 @@ export async function pdfToExcel(file) {
   }
 }
 
-// Convert Excel to PDF using ConvertX API (preserves formatting)
+// Convert Excel to PDF using ISOLATED ConvertX API endpoint (preserves formatting)
+// This uses a separate API endpoint that won't be affected by other tools
 export async function excelToPDF(file) {
   try {
-    console.log('Starting Excel to PDF conversion...');
+    console.log('Starting Excel to PDF conversion (Isolated API)...');
     console.log('File details:', { name: file.name, type: file.type, size: file.size });
 
     // Import supabase client for auth check
@@ -412,14 +419,15 @@ export async function excelToPDF(file) {
       throw new Error('Please log in to use Excel to PDF conversion');
     }
 
-    // Use ConvertX API if available
+    // Use ISOLATED ConvertX API endpoint if available
     if (CONVERTX_API_URL) {
-      console.log('Using ConvertX API for conversion...');
+      console.log('Using ISOLATED Excel-to-PDF API endpoint...');
 
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch(`${CONVERTX_API_URL}/convert/sync/xlsx/to/pdf`, {
+      // NEW: Uses isolated endpoint /excel-to-pdf/convert instead of /convert/sync/xlsx/to/pdf
+      const response = await fetch(`${CONVERTX_API_URL}/excel-to-pdf/convert`, {
         method: 'POST',
         body: formData,
       });
