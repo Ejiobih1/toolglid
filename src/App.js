@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Moon, Sun, Lock, Clock, Play, FileText, Scissors, Minimize2, Image, FileImage, Type, Shield, RotateCw, Crown, X, Upload, Download, AlertCircle, CheckCircle, Loader, Hash, Trash2, FileDown, FileEdit, PenTool, Crop, Maximize2, Layers, AlignCenter, ArrowUpDown, LogOut, LogIn, User as UserIcon, Menu } from 'lucide-react';
+import { Moon, Sun, Lock, Clock, Play, FileText, Scissors, Minimize2, Image, FileImage, Type, Shield, RotateCw, Crown, X, Upload, Download, AlertCircle, CheckCircle, Loader, Hash, Trash2, FileDown, FileEdit, PenTool, Crop, Maximize2, Layers, AlignCenter, ArrowUpDown, LogOut, LogIn, User as UserIcon, Menu, Table } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import { supabase } from './lib/supabase';
 import {
@@ -10,6 +10,8 @@ import {
   jpgToPDF,
   pdfToWord,
   wordToPDF,
+  pdfToExcel,
+  excelToPDF,
   rotatePDF,
   protectPDF,
   pdfToPNG,
@@ -420,6 +422,8 @@ export default function PDFToolsApp() {
     { id: 'jpg-to-pdf', icon: FileImage, name: 'JPG to PDF', desc: 'Convert images to PDF documents', accept: 'image/*', multiple: true },
     { id: 'pdf-to-word', icon: Type, name: 'PDF to Word', desc: 'Convert PDF to editable Word document', accept: '.pdf', multiple: false },
     { id: 'word-to-pdf', icon: FileText, name: 'Word to PDF', desc: 'Convert Word documents to PDF format', accept: '.docx,.doc,.txt', multiple: false },
+    { id: 'pdf-to-excel', icon: Table, name: 'PDF to Excel', desc: 'Extract tables from PDF to Excel spreadsheet', accept: '.pdf', multiple: false },
+    { id: 'excel-to-pdf', icon: FileText, name: 'Excel to PDF', desc: 'Convert Excel spreadsheets to PDF format', accept: '.xlsx,.xls', multiple: false },
 
     // Page Management
     { id: 'organize-pages', icon: ArrowUpDown, name: 'Organize Pages', desc: 'Reorder, rearrange, or delete pages visually', accept: '.pdf', multiple: false },
@@ -716,6 +720,16 @@ export default function PDFToolsApp() {
 
         case 'word-to-pdf':
           resultBlob = await wordToPDF(files[0]);
+          filename += '.pdf';
+          break;
+
+        case 'pdf-to-excel':
+          resultBlob = await pdfToExcel(files[0]);
+          filename += '.xlsx';
+          break;
+
+        case 'excel-to-pdf':
+          resultBlob = await excelToPDF(files[0]);
           filename += '.pdf';
           break;
 
@@ -1330,7 +1344,7 @@ export default function PDFToolsApp() {
           <h2 className={`text-4xl sm:text-5xl font-bold mb-4 ${
             darkMode ? 'text-white' : 'text-gray-900'
           }`}>
-            21+ Professional PDF Tools
+            23+ Professional PDF Tools
           </h2>
           <p className={`text-lg sm:text-xl ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
             Convert, compress, merge, edit, sign, and protect PDFs - All in your browser
@@ -1423,7 +1437,7 @@ export default function PDFToolsApp() {
       <footer className={`mt-16 border-t ${darkMode ? 'border-purple-500/20' : 'border-purple-200'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <p className={`text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            ToolGlid - 21+ Professional PDF Tools. Free, secure, and privacy-friendly.
+            ToolGlid - 23+ Professional PDF Tools. Free, secure, and privacy-friendly.
           </p>
           {/* Reset buttons for testing */}
           <div className="flex justify-center gap-4 mt-4">

@@ -391,6 +391,87 @@ export async function pdfToExcel(file) {
   }
 }
 
+// Convert Excel to PDF using ConvertX API (preserves formatting)
+export async function excelToPDF(file) {
+  try {
+    console.log('Starting Excel to PDF conversion...');
+    console.log('File details:', { name: file.name, type: file.type, size: file.size });
+
+    // Import supabase client for auth check
+    const { supabase, SUPABASE_URL } = await import('./lib/supabase.js');
+
+    // Get current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error('Session error:', sessionError);
+      throw new Error('Authentication error. Please try logging in again.');
+    }
+
+    if (!session) {
+      throw new Error('Please log in to use Excel to PDF conversion');
+    }
+
+    // Use ConvertX API if available
+    if (CONVERTX_API_URL) {
+      console.log('Using ConvertX API for conversion...');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch(`${CONVERTX_API_URL}/convert/sync/xlsx/to/pdf`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Conversion failed: ${errorText}`);
+      }
+
+      const pdfBlob = await response.blob();
+      console.log('Excel to PDF conversion completed successfully!');
+      return pdfBlob;
+
+    } else {
+      // Fallback to Supabase edge function
+      console.log('Using Supabase edge function for conversion...');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const functionUrl = `${SUPABASE_URL}/functions/v1/excel-to-pdf`;
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          errorData = { error: errorText || 'Conversion failed' };
+        }
+        throw new Error(errorData.error || `Conversion failed with status ${response.status}`);
+      }
+
+      const pdfBlob = await response.blob();
+      console.log('Excel to PDF conversion completed successfully!');
+      return pdfBlob;
+    }
+
+  } catch (error) {
+    console.error('Excel to PDF conversion failed:', error);
+    throw new Error(`Excel to PDF conversion failed: ${error.message}`);
+  }
+}
+
 // Helper function to create PDF from text with better formatting
 function createPDFFromText(text, originalFilename = 'document') {
   const pdfDoc = new jsPDF({
